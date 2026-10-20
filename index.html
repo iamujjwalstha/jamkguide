@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#080d18" />
+  <title>Campus 360° — Street View Walkthrough</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel: rgba(12, 19, 33, .88);
+      --panel-border: rgba(180, 204, 255, .16);
+      --muted: #9cacbf;
+      --text: #f3f7ff;
+      --accent: #55e6c1;
+      --accent-2: #73a7ff;
+      --warning: #ffd27d;
+      --danger: #ff7f8b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #080d18; color: var(--text); font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    #app { position: fixed; inset: 0; }
+    canvas.webgl { display: block; width: 100%; height: 100%; touch-action: none; outline: none; cursor: grab; }
+    canvas.webgl:active { cursor: grabbing; }
+    #hud {
+      position: fixed; z-index: 10; top: max(14px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left));
+      width: min(360px, calc(100vw - 28px)); padding: 16px; border: 1px solid var(--panel-border); border-radius: 18px;
+      background: var(--panel); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 16px 54px rgba(0,0,0,.32);
+    }
+    .brand-row { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+    .brand-mark { width: 37px; height: 37px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; color: #071511; background: linear-gradient(135deg, var(--accent), #a9ffe8); font-size: 19px; font-weight: 900; }
+    h1 { font-size: 15px; letter-spacing: .035em; line-height: 1.2; margin: 0; }
+    .subtitle { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    .status-line { display: flex; gap: 8px; align-items: center; margin: 12px 0 15px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 12px currentColor; flex: 0 0 auto; color: var(--warning); }
+    .status-dot.good { background: var(--accent); color: var(--accent); }
+    .status-dot.bad { background: var(--danger); color: var(--danger); }
+    #statusText { font-size: 12px; color: #d5deea; flex: 1; }
+    .tag { border: 1px solid rgba(255,255,255,.12); padding: 3px 7px; border-radius: 999px; color: var(--muted); font-size: 10px; white-space: nowrap; }
+    label.field-label { display: block; margin: 12px 0 6px; color: #c0ccdc; font-size: 11px; font-weight: 700; letter-spacing: .075em; text-transform: uppercase; }
+    select, button { font: inherit; }
+    select { width: 100%; color: var(--text); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 10px 11px; outline: none; }
+    select:focus-visible, button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+    .button-row { display: flex; gap: 8px; margin-top: 9px; }
+    button.action { min-height: 39px; border-radius: 10px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.065); color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer; transition: transform .15s ease, background .15s ease, border-color .15s ease; }
+    button.action:hover { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.27); }
+    button.action:active { transform: translateY(1px); }
+    button.action:disabled { opacity: .38; cursor: not-allowed; transform: none; }
+    button.primary { background: var(--accent); border-color: transparent; color: #071611; flex: 1; }
+    button.primary:hover { background: #8bf4d8; }
+    button.subtle { flex: 1; }
+    .room-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 11px; }
+    #roomCount { white-space: nowrap; }
+    .tip { margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.09); color: var(--muted); font-size: 11px; }
+    .tip strong { color: #dce8f7; font-weight: 650; }
+    #fileInput { display: none; }
+    #dropOverlay { position: fixed; z-index: 50; inset: 12px; display: none; place-items: center; border: 2px dashed var(--accent); border-radius: 26px; background: rgba(4, 14, 23, .86); color: white; text-align: center; pointer-events: none; font-size: clamp(18px, 4vw, 30px); font-weight: 800; }
+    #dropOverlay.visible { display: grid; }
+    #toast { position: fixed; z-index: 30; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translate(-50%, 14px); opacity: 0; max-width: min(520px, calc(100vw - 28px)); padding: 10px 14px; border-radius: 12px; border: 1px solid var(--panel-border); background: rgba(7, 13, 24, .93); color: var(--text); text-align: center; font-size: 12px; box-shadow: 0 12px 35px rgba(0,0,0,.35); transition: opacity .2s ease, transform .2s ease; pointer-events: none; }
+    #toast.visible { opacity: 1; transform: translate(-50%, 0); }
+    #loading { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: #080d18; color: #dce8f7; font-size: 13px; transition: opacity .3s ease; }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+    #walkTransition { position: fixed; inset: 0; z-index: 35; background: #050912; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+    #walkTransition.active { opacity: .42; }
+    #loading .loader { width: 30px; height: 30px; border: 3px solid rgba(255,255,255,.14); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .vr-button, #VRButton { z-index: 20 !important; }
+    #VRButton { border-radius: 10px !important; font: 700 12px system-ui, sans-serif !important; }
+    @media (max-width: 520px) {
+      #hud { padding: 13px; width: min(330px, calc(100vw - 24px)); top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); }
+      .brand-mark { width: 32px; height: 32px; }
+      .tip { font-size: 10px; }
+    }
+
+    /* Studio-style tools inspired by modern virtual-tour editors */
+    #tourToolbar { position:fixed; z-index:16; top:max(14px,env(safe-area-inset-top)); right:max(14px,env(safe-area-inset-right)); display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; max-width:calc(100vw - 400px); }
+    #tourToolbar .tool { min-height:39px; padding:9px 12px; border:1px solid rgba(255,255,255,.17); border-radius:11px; background:rgba(7,13,24,.76); color:#f4f8ff; backdrop-filter:blur(14px); font-size:12px; font-weight:750; cursor:pointer; }
+    #tourToolbar .tool:hover, #tourToolbar .tool.active { border-color:rgba(85,230,193,.8); background:rgba(19,55,59,.9); }
+    #tourToolbar .tool.accent { background:#55e6c1; color:#071611; border-color:transparent; }
+    #sceneStrip { position:fixed; z-index:12; left:50%; bottom:max(15px,env(safe-area-inset-bottom)); transform:translateX(-50%); display:flex; gap:9px; width:min(860px,calc(100vw - 30px)); overflow-x:auto; padding:10px; border:1px solid rgba(255,255,255,.15); border-radius:16px; background:rgba(8,14,25,.78); backdrop-filter:blur(16px); scrollbar-width:thin; }
+    .scene-card { position:relative; flex:0 0 132px; height:78px; overflow:hidden; border:1px solid rgba(255,255,255,.17); border-radius:10px; padding:0; background:#192638; color:#fff; cursor:pointer; text-align:left; }
+    .scene-card img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.73; }
+    .scene-card::after { content:""; position:absolute; inset:25% 0 0; background:linear-gradient(transparent,rgba(0,0,0,.83)); }
+    .scene-card span { position:absolute; z-index:1; left:8px; right:6px; bottom:6px; font-size:11px; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .scene-card.current { border:2px solid #55e6c1; box-shadow:0 0 0 1px rgba(85,230,193,.15); }
+    .scene-card.current img { opacity:.95; }
+    #studioPanel { position:fixed; z-index:18; top:70px; right:14px; bottom:116px; width:min(350px,calc(100vw - 28px)); overflow:auto; padding:17px; border:1px solid rgba(180,204,255,.19); border-radius:17px; background:rgba(10,17,29,.95); backdrop-filter:blur(20px); box-shadow:0 20px 65px rgba(0,0,0,.42); }
+    #studioPanel[hidden], #floorPlanPanel[hidden], #infoDialog[hidden] { display:none; }
+    .studio-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+    .studio-head h2 { margin:0; font-size:15px; letter-spacing:.02em; }
+    .studio-section { border-top:1px solid rgba(255,255,255,.1); margin-top:15px; padding-top:13px; }
+    .studio-section h3 { margin:0 0 9px; font-size:11px; color:#aebed2; letter-spacing:.1em; text-transform:uppercase; }
+    .studio-label { display:block; margin:9px 0 5px; color:#b8c7d9; font-size:11px; font-weight:700; }
+    .studio-input, .studio-select, .studio-textarea { width:100%; border:1px solid rgba(255,255,255,.15); border-radius:9px; background:rgba(255,255,255,.06); color:#f4f8ff; padding:9px 10px; font:inherit; font-size:12px; }
+    .studio-select option { color:#111; }
+    .studio-textarea { min-height:74px; resize:vertical; }
+    .studio-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+    .studio-actions .action { flex:1; }
+    .hotspot-list { display:flex; flex-direction:column; gap:6px; margin-top:9px; }
+    .hotspot-list button { padding:8px 9px; border-radius:8px; border:1px solid rgba(255,255,255,.12); color:#e9f0fb; background:rgba(255,255,255,.045); text-align:left; font-size:11px; cursor:pointer; }
+    .hotspot-list button.selected { border-color:#55e6c1; background:rgba(85,230,193,.1); }
+    #editorHint { position:fixed; z-index:17; left:50%; top:18px; transform:translateX(-50%); max-width:calc(100vw - 30px); padding:9px 13px; border:1px solid rgba(85,230,193,.55); border-radius:999px; background:rgba(5,20,24,.9); color:#dffff6; font-size:12px; pointer-events:none; display:none; text-align:center; }
+    #editorHint.visible { display:block; }
+    #floorPlanPanel { position:fixed; z-index:19; right:16px; bottom:120px; width:min(370px,calc(100vw - 32px)); padding:11px; border:1px solid rgba(255,255,255,.2); border-radius:15px; background:rgba(9,16,27,.94); box-shadow:0 15px 45px rgba(0,0,0,.4); }
+    #floorPlanPanel .plan-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; font-weight:800; font-size:12px; }
+    #floorPlanCanvasWrap { position:relative; width:100%; max-height:42vh; overflow:hidden; border-radius:9px; background:#172234; }
+    #floorPlanImage { display:block; width:100%; max-height:42vh; object-fit:contain; cursor:crosshair; }
+    #floorPlanPins { position:absolute; inset:0; pointer-events:none; }
+    .plan-pin { position:absolute; transform:translate(-50%,-50%); width:23px; height:23px; display:grid; place-items:center; border:2px solid white; border-radius:50% 50% 50% 0; transform:translate(-50%,-75%) rotate(-45deg); background:#55e6c1; color:#062018; font-weight:900; font-size:10px; pointer-events:auto; cursor:pointer; box-shadow:0 3px 12px rgba(0,0,0,.45); }
+    .plan-pin span { transform:rotate(45deg); }
+    #infoDialog { position:fixed; z-index:60; left:50%; top:50%; transform:translate(-50%,-50%); width:min(430px,calc(100vw - 30px)); padding:22px; border:1px solid rgba(255,255,255,.18); border-radius:18px; background:rgba(10,17,29,.97); box-shadow:0 25px 100px rgba(0,0,0,.6); }
+    #infoDialog h2 { margin:0 0 9px; font-size:19px; }
+    #infoContent { color:#cfdae9; white-space:pre-wrap; font-size:13px; margin:0 0 15px; }
+    #cleanViewButton { display:none; position:fixed; z-index:25; top:12px; right:12px; border:1px solid rgba(255,255,255,.2); border-radius:9px; padding:9px 12px; background:rgba(8,14,25,.75); color:white; }
+    body.clean-view #hud, body.clean-view #tourToolbar, body.clean-view #sceneStrip, body.clean-view #studioPanel, body.clean-view #floorPlanPanel, body.clean-view #editorHint { display:none !important; }
+    body.clean-view #cleanViewButton { display:block; }
+    @media(max-width:850px) { #tourToolbar { top:auto; bottom:104px; right:12px; max-width:calc(100vw - 24px); } #tourToolbar .tool { min-height:34px; padding:7px 9px; font-size:11px; } #hud { max-height:42vh; overflow:auto; } #sceneStrip { bottom:8px; } #studioPanel { top:12px; bottom:160px; } #editorHint { top:10px; } }
+    @media(max-width:520px) { #tourToolbar { bottom:95px; justify-content:center; left:8px; right:8px; } #tourToolbar .tool { padding:7px 8px; } .scene-card { flex-basis:112px; height:67px; } #hud { width:min(300px,calc(100vw - 20px)); } }
+
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main id="app" aria-label="Immersive campus tour"></main>
+  <section id="hud" aria-label="Tour controls">
+    <div class="brand-row">
+      <div class="brand-mark" aria-hidden="true">360</div>
+      <div>
+        <h1>CAMPUS WALKTHROUGH</h1>
+        <div class="subtitle">Street View-style · follow the floor arrows</div>
+      </div>
+    </div>
+    <div class="status-line">
+      <span id="statusDot" class="status-dot" aria-hidden="true"></span>
+      <span id="statusText" role="status" aria-live="polite">Checking WebXR support…</span>
+      <span class="tag" id="modeTag">2D MODE</span>
+    </div>
+    <label class="field-label" for="roomSelect">Location menu · optional</label>
+    <select id="roomSelect" aria-label="Select campus room"></select>
+    <div class="room-meta">
+      <span id="roomDescription">Demo panorama · import your own 360° photo</span>
+      <span id="roomCount">1 / 6</span>
+    </div>
+    <div class="button-row" aria-label="Walk between viewpoints">
+      <button type="button" class="action subtle" id="previousButton" disabled>← Walk back</button>
+      <button type="button" class="action primary" id="nextButton" disabled>Walk forward →</button>
+    </div>
+    <div class="button-row">
+      <button type="button" class="action primary" id="uploadButton">＋ Import 360 photos</button>
+      <button type="button" class="action subtle" id="resetViewButton">Reset view</button>
+    </div>
+    <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple />
+    <div class="tip">
+      <strong>Walkthrough mode:</strong> drag or swipe to look around. Click the 3D arrows on the floor to walk to the next photo position, just like Google Street View. Use Walk back / Walk forward as an alternative. <strong>VR:</strong> aim a controller laser at an arrow and press the trigger.<br />
+      <strong>Use your own campus:</strong> import multiple full 360° equirectangular photos in route order. Name them <em>01_Entrance.jpg</em>, <em>02_Corridor.jpg</em>, <em>03_Classroom.jpg</em>. The first import replaces the demo tour; later imports extend your current route. Each arrow transitions between captured viewpoints—360° photos alone cannot provide continuous free 3D movement.
+    </div>
+  </section>
+
+  <nav id="tourToolbar" aria-label="Tour tools">
+    <button class="tool" id="editTourButton" type="button">✎ Edit tour</button>
+    <button class="tool" id="autoRotateButton" type="button">↻ Auto-rotate</button>
+    <button class="tool" id="floorPlanButton" type="button">▦ Floor plan</button>
+    <button class="tool" id="audioButton" type="button">♫ Add audio</button>
+    <button class="tool" id="brandingButton" type="button">◈ Branding</button>
+    <button class="tool" id="fullscreenButton" type="button">⛶ Fullscreen</button>
+    <button class="tool" id="cleanViewToggleButton" type="button">◌ Clean view</button>
+    <button class="tool accent" id="exportTourButton" type="button">↓ Export tour</button>
+    <button class="tool" id="loadTourButton" type="button">↑ Load tour</button>
+  </nav>
+  <input id="projectInput" type="file" accept="application/json,.json" hidden />
+  <input id="floorPlanInput" type="file" accept="image/*,.jpg,.jpeg,.png,.webp" hidden />
+  <input id="logoInput" type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.svg" hidden />
+  <input id="audioInput" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" hidden />
+  <aside id="studioPanel" hidden aria-label="Virtual tour editor">
+    <div class="studio-head"><h2>Tour studio</h2><button class="action" id="closeStudioButton" type="button" aria-label="Close editor">✕</button></div>
+    <div style="font-size:11px;color:#9cacbf;margin:-4px 0 11px">Add a hotspot, then click the panorama to place it. Changes are kept in this browser session until you export the tour project.</div>
+    <div class="studio-section" style="border-top:0;margin-top:0;padding-top:0">
+      <h3>Tour branding</h3>
+      <label class="studio-label" for="tourTitleInput">Tour title</label><input class="studio-input" id="tourTitleInput" value="Campus Walkthrough" maxlength="90" />
+      <div class="studio-actions"><button class="action" id="saveTourTitleButton" type="button">Save title</button><button class="action" id="chooseLogoButton" type="button">Upload logo</button></div>
+    </div>
+    <div class="studio-section">
+      <h3>Current viewpoint</h3>
+      <label class="studio-label" for="roomNameInput">Location name</label><input class="studio-input" id="roomNameInput" maxlength="90" />
+      <label class="studio-label" for="roomDescriptionInput">Description</label><textarea class="studio-textarea" id="roomDescriptionInput" maxlength="800"></textarea>
+      <div class="studio-actions"><button class="action primary" id="saveRoomDetailsButton" type="button">Save location</button></div>
+    </div>
+    <div class="studio-section">
+      <h3>Add hotspot</h3>
+      <div class="studio-actions"><button class="action primary" id="addNavigationHotspotButton" type="button">➜ Navigation</button><button class="action" id="addInfoHotspotButton" type="button">ⓘ Info</button><button class="action" id="addLinkHotspotButton" type="button">↗ Link</button></div>
+      <div id="hotspotList" class="hotspot-list"></div>
+    </div>
+    <div class="studio-section" id="hotspotProperties" hidden>
+      <h3>Selected hotspot</h3>
+      <label class="studio-label" for="hotspotLabelInput">Label</label><input class="studio-input" id="hotspotLabelInput" maxlength="90" />
+      <label class="studio-label" for="hotspotTypeInput">Action</label><select class="studio-select" id="hotspotTypeInput"><option value="navigation">Go to viewpoint</option><option value="info">Show information card</option><option value="link">Open website</option></select>
+      <div id="hotspotTargetWrap"><label class="studio-label" for="hotspotTargetInput">Destination viewpoint</label><select class="studio-select" id="hotspotTargetInput"></select></div>
+      <div id="hotspotContentWrap"><label class="studio-label" for="hotspotContentInput">Information text</label><textarea class="studio-textarea" id="hotspotContentInput" maxlength="1400" placeholder="Write details about this campus location…"></textarea></div>
+      <div id="hotspotUrlWrap"><label class="studio-label" for="hotspotUrlInput">Website URL (https://)</label><input class="studio-input" id="hotspotUrlInput" placeholder="https://example.com" /></div>
+      <div class="studio-actions"><button class="action primary" id="saveHotspotButton" type="button">Save hotspot</button><button class="action" id="deleteHotspotButton" type="button">Delete</button></div>
+    </div>
+    <div class="studio-section"><h3>Project</h3><div style="font-size:11px;color:#9cacbf">Export saves the panoramas, connections, hotspot positions, branding title and floor-plan pins to a JSON project file. Keep the original photos as a backup too.</div><div class="studio-actions"><button class="action" id="exportFromStudioButton" type="button">Export project JSON</button><button class="action" id="loadFromStudioButton" type="button">Load project JSON</button></div></div>
+  </aside>
+  <div id="editorHint">Editor: choose a hotspot type, then click a point in the panorama</div>
+  <div id="sceneStrip" aria-label="Viewpoint filmstrip"></div>
+  <section id="floorPlanPanel" hidden aria-label="Interactive floor plan">
+    <div class="plan-header"><span>Campus floor plan</span><button class="action" id="closeFloorPlanButton" type="button">✕</button></div>
+    <div id="floorPlanCanvasWrap"><img id="floorPlanImage" alt="Uploaded campus floor plan" /><div id="floorPlanPins"></div></div>
+    <div style="color:#9cacbf;font-size:10px;margin-top:7px" id="floorPlanHint">Upload a floor plan in the Studio. In edit mode, click the plan to pin the current viewpoint.</div>
+    <div class="studio-actions"><button class="action" id="uploadFloorPlanButton" type="button">Upload floor plan</button></div>
+  </section>
+  <section id="infoDialog" hidden role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+    <button class="action" id="closeInfoDialogButton" type="button" style="float:right">✕</button><h2 id="infoTitle">Campus information</h2><p id="infoContent"></p><a id="infoLink" href="#" target="_blank" rel="noopener noreferrer" style="display:none;color:#55e6c1;font-weight:800">Open website ↗</a>
+  </section>
+  <button id="cleanViewButton" type="button">Show controls</button>
+
+  <div id="dropOverlay">Drop 360° photos to add them to your campus tour</div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="walkTransition" aria-hidden="true"></div>
+  <div id="loading"><div><div class="loader"></div>Building your campus tour…</div></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
+
+    // ------------------------------------------------------------------------
+    // DOM + application state
+    // ------------------------------------------------------------------------
+    const app = document.querySelector('#app');
+    const roomSelect = document.querySelector('#roomSelect');
+    const statusText = document.querySelector('#statusText');
+    const statusDot = document.querySelector('#statusDot');
+    const modeTag = document.querySelector('#modeTag');
+    const roomDescription = document.querySelector('#roomDescription');
+    const roomCount = document.querySelector('#roomCount');
+    const fileInput = document.querySelector('#fileInput');
+    const uploadButton = document.querySelector('#uploadButton');
+    const resetViewButton = document.querySelector('#resetViewButton');
+    const previousButton = document.querySelector('#previousButton');
+    const nextButton = document.querySelector('#nextButton');
+    const dropOverlay = document.querySelector('#dropOverlay');
+    const toast = document.querySelector('#toast');
+    const loading = document.querySelector('#loading');
+    const walkTransition = document.querySelector('#walkTransition');
+
+    const rooms = new Map();
+    let currentRoomId = 'entrance';
+    let roomSequence = 0;
+    let panoramaMesh;
+    let activePortals = [];
+    let portalHitTargets = [];
+    let pointerX = 0;
+    let pointerY = 0;
+    let yaw = 0;
+    let pitch = 0;
+    let dragStart = null;
+    let dragMoved = false;
+    let toastTimeout = null;
+    let isImporting = false;
+    let editMode = false;
+    let pendingHotspotType = null;
+    let selectedHotspotId = null;
+    let activeHotspotSprites = [];
+    let hotspotHitTargets = [];
+    let autoRotate = false;
+    let cleanView = false;
+    let floorPlanData = null;
+    let logoDataURL = null;
+    let backgroundAudio = null;
+    let currentAudioURL = null;
+    let tourTitle = 'Campus Walkthrough';
+
+    // ------------------------------------------------------------------------
+    // Three.js scene, inverted panorama sphere, and renderer
+    // ------------------------------------------------------------------------
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080d18);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 1200);
+    camera.position.set(0, 1.6, 0);
+    camera.rotation.order = 'YXZ';
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType('local-floor');
+    renderer.domElement.className = 'webgl';
+    renderer.domElement.setAttribute('aria-label', '360-degree campus panorama. Drag to look around and click portal markers.');
+    app.appendChild(renderer.domElement);
+
+    // Flip geometry inward so its front faces are visible from inside the sphere.
+    const sphereGeometry = new THREE.SphereGeometry(80, 72, 48);
+    sphereGeometry.scale(-1, 1, 1);
+    const panoramaMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    panoramaMesh = new THREE.Mesh(sphereGeometry, panoramaMaterial);
+    // Center the panorama on the desktop eye height. In XR this moves to floor-origin.
+    panoramaMesh.position.y = 1.6;
+    panoramaMesh.frustumCulled = false;
+    scene.add(panoramaMesh);
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.near = 0.05;
+    raycaster.far = 30;
+    const mouseNDC = new THREE.Vector2();
+    const tempMatrix = new THREE.Matrix4();
+    const tempOrigin = new THREE.Vector3();
+    const tempDirection = new THREE.Vector3();
+    const controllers = [];
+
+    // ------------------------------------------------------------------------
+    // Demo panorama generator. These are intentionally synthetic placeholders;
+    // import real 2:1 equirectangular photos for a real campus tour.
+    // ------------------------------------------------------------------------
+    function createDemoPanorama(title, palette, seed) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2048;
+      canvas.height = 1024;
+      const ctx = canvas.getContext('2d');
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, palette[0]);
+      gradient.addColorStop(0.46, palette[1]);
+      gradient.addColorStop(0.54, palette[2]);
+      gradient.addColorStop(1, palette[3]);
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Distant facade and window-like panels create a readable orientation test.
+      const horizon = 530;
+      ctx.fillStyle = 'rgba(8, 15, 26, .18)';
+      ctx.fillRect(0, 315, canvas.width, 300);
+      for (let i = 0; i < 18; i++) {
+        const x = i * 122 + ((seed * 29) % 56);
+        const h = 100 + ((i * 23 + seed * 37) % 125);
+        ctx.fillStyle = i % 3 === 0 ? 'rgba(232,244,255,.13)' : 'rgba(10,24,42,.16)';
+        ctx.fillRect(x, horizon - h, 78, h);
+        ctx.fillStyle = 'rgba(220,242,255,.23)';
+        for (let w = 0; w < 3; w++) {
+          for (let r = 0; r < Math.floor(h / 30); r++) ctx.fillRect(x + 10 + w * 21, horizon - h + 12 + r * 26, 9, 13);
+        }
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,.16)';
+      ctx.lineWidth = 5;
+      for (let i = 0; i < 12; i++) {
+        const x = i * (canvas.width / 12);
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(5,10,18,.62)';
+      ctx.fillRect(500, 360, 1048, 110);
+      ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2;
+      ctx.strokeRect(500, 360, 1048, 110);
+      ctx.fillStyle = '#f0f7ff';
+      ctx.textAlign = 'center';
+      ctx.font = '700 54px system-ui, sans-serif';
+      ctx.fillText(title.toUpperCase(), canvas.width / 2, 427);
+      ctx.fillStyle = 'rgba(255,255,255,.24)';
+      ctx.fillRect(0, 525, canvas.width, 7);
+      for (let i = 0; i < 24; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${0.02 + ((i + seed) % 4) * 0.018})`;
+        ctx.fillRect(i * 90, 650 + (i % 3) * 20, 90, 4);
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+      return texture;
+    }
+
+    function addRoom({ id, name, description, texture, isDemo = false, sourceData = null, hotspots = [], floorPos = null }) {
+      const room = {
+        id, name,
+        description: description || (isDemo ? 'Demo panorama' : 'Imported 360° photo'),
+        texture, isDemo, sourceData, hotspots: Array.isArray(hotspots) ? hotspots : [], floorPos,
+        connections: [], routePrev: null, routeNext: null
+      };
+      rooms.set(id, room);
+      return room;
+    }
+
+    // Every connection is bidirectional. `route: true` additionally marks an
+    // ordered, Street View-like Previous/Next path through sequential captures.
+    function connectRooms(aId, bId, { route = false } = {}) {
+      if (!rooms.has(aId) || !rooms.has(bId) || aId === bId) return;
+      const a = rooms.get(aId);
+      const b = rooms.get(bId);
+      if (!a.connections.includes(bId)) a.connections.push(bId);
+      if (!b.connections.includes(aId)) b.connections.push(aId);
+      if (route) {
+        a.routeNext = bId;
+        b.routePrev = aId;
+      }
+    }
+
+    const demoRooms = [
+      { id: 'entrance', name: 'Campus entrance', palette: ['#0f2b4b', '#496e92', '#8797a0', '#202e3d'], description: 'Welcome area · demo panorama' },
+      { id: 'corridor', name: 'Main corridor', palette: ['#233f5d', '#7f9baa', '#b5aca0', '#354454'], description: 'Main corridor · demo panorama' },
+      { id: 'classroom', name: 'Classroom', palette: ['#24384b', '#708ca4', '#d0c7b6', '#4b5663'], description: 'Teaching space · demo panorama' },
+      { id: 'library', name: 'Library', palette: ['#183b4a', '#5e8b8f', '#c7bfa9', '#2d4549'], description: 'Study area · demo panorama' },
+      { id: 'cafeteria', name: 'Cafeteria', palette: ['#44334d', '#957b8b', '#c7b8a1', '#393b48'], description: 'Student dining · demo panorama' },
+      { id: 'courtyard', name: 'Courtyard', palette: ['#254a5e', '#6a9d9d', '#9cae8c', '#263d3a'], description: 'Outdoor courtyard · demo panorama' },
+    ];
+
+    demoRooms.forEach((room, i) => {
+      addRoom({ ...room, texture: createDemoPanorama(room.name, room.palette, i + 1), isDemo: true });
+    });
+    // Demo stops form a simple walk-through route.
+    connectRooms('entrance', 'corridor', { route: true });
+    connectRooms('corridor', 'classroom', { route: true });
+    connectRooms('classroom', 'library', { route: true });
+    connectRooms('library', 'cafeteria', { route: true });
+    connectRooms('cafeteria', 'courtyard', { route: true });
+
+    // ------------------------------------------------------------------------
+    // Room selection and portal graph rendering
+    // ------------------------------------------------------------------------
+    function refreshRoomDropdown() {
+      const previousValue = roomSelect.value;
+      roomSelect.replaceChildren();
+      for (const room of rooms.values()) {
+        const option = document.createElement('option');
+        option.value = room.id;
+        option.textContent = room.name;
+        roomSelect.appendChild(option);
+      }
+      roomSelect.value = rooms.has(previousValue) ? previousValue : currentRoomId;
+      updateRoomInfo();
+      renderSceneStrip();
+    }
+
+    function updateRoomInfo() {
+      const room = rooms.get(currentRoomId);
+      if (!room) return;
+      roomSelect.value = currentRoomId;
+      roomDescription.textContent = room.description;
+      roomCount.textContent = `${[...rooms.keys()].indexOf(currentRoomId) + 1} / ${rooms.size}`;
+      previousButton.disabled = !room.routePrev || !rooms.has(room.routePrev);
+      nextButton.disabled = !room.routeNext || !rooms.has(room.routeNext);
+      previousButton.title = room.routePrev && rooms.has(room.routePrev)
+        ? `Go back to ${rooms.get(room.routePrev).name}` : 'No previous stop on this walkthrough route';
+      nextButton.title = room.routeNext && rooms.has(room.routeNext)
+        ? `Continue to ${rooms.get(room.routeNext).name}` : 'No next stop on this walkthrough route';
+      if (studioPanel && !studioPanel.hidden) syncStudioRoomFields();
+    }
+
+    function clearPortals() {
+      for (const portal of activePortals) {
+        scene.remove(portal.group);
+        portal.group.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach(material => {
+              // Portal labels own their generated CanvasTextures; dispose them on room changes.
+              if (material.map) material.map.dispose();
+              material.dispose();
+            });
+          }
+        });
+      }
+      activePortals = [];
+      portalHitTargets = [];
+    }
+
+    function makePortalLabel(text) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(5, 15, 27, .86)';
+      roundRect(ctx, 8, 8, 496, 112, 28);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(85,230,193,.78)';
+      ctx.lineWidth = 4;
+      roundRect(ctx, 8, 8, 496, 112, 28);
+      ctx.stroke();
+      ctx.fillStyle = '#f4fffc';
+      ctx.font = '700 34px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      let label = text;
+      while (ctx.measureText(label).width > 450 && label.length > 7) label = `${label.slice(0, -4)}…`;
+      ctx.fillText(label, 256, 65);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: true });
+      return new THREE.Sprite(material);
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + width, y, x + width, y + height, radius);
+      ctx.arcTo(x + width, y + height, x, y + height, radius);
+      ctx.arcTo(x, y + height, x, y, radius);
+      ctx.arcTo(x, y, x + width, y, radius);
+      ctx.closePath();
+    }
+
+    function makeStreetViewArrow() {
+      // A horizontal, top-down arrow sits near floor level like a Street View
+      // navigation chevron. Unlike a billboard sprite, it has a real 3D position.
+      const canvas = document.createElement('canvas');
+      canvas.width = 384;
+      canvas.height = 384;
+      const ctx = canvas.getContext('2d');
+      const glow = ctx.createRadialGradient(192, 192, 36, 192, 192, 175);
+      glow.addColorStop(0, 'rgba(85,230,193,.34)');
+      glow.addColorStop(.65, 'rgba(85,230,193,.16)');
+      glow.addColorStop(1, 'rgba(85,230,193,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, 384, 384);
+      ctx.fillStyle = 'rgba(5, 15, 27, .78)';
+      ctx.beginPath();
+      ctx.ellipse(192, 210, 125, 112, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.94)';
+      ctx.lineWidth = 10;
+      ctx.lineJoin = 'round';
+      ctx.fillStyle = '#55e6c1';
+      ctx.beginPath();
+      ctx.moveTo(192, 42);
+      ctx.lineTo(315, 177);
+      ctx.lineTo(250, 177);
+      ctx.lineTo(250, 306);
+      ctx.lineTo(134, 306);
+      ctx.lineTo(134, 177);
+      ctx.lineTo(69, 177);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.MeshBasicMaterial({
+        map: texture, transparent: true, side: THREE.DoubleSide,
+        depthTest: true, depthWrite: false, toneMapped: false
+      });
+      const arrow = new THREE.Mesh(new THREE.PlaneGeometry(1.22, 1.22), material);
+      arrow.rotation.x = -Math.PI / 2;
+      arrow.position.y = 0.035;
+      arrow.renderOrder = 20;
+      arrow.userData.isWalkArrow = true;
+      return arrow;
+    }
+
+    function getViewHeading() {
+      // In XR use the tracked headset camera; on desktop use mouse-look rotation.
+      const viewCamera = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
+      viewCamera.updateMatrixWorld(true);
+      viewCamera.getWorldDirection(tempDirection);
+      return Math.atan2(-tempDirection.x, -tempDirection.z);
+    }
+
+    function buildPortals(room) {
+      clearPortals();
+      clearHotspotSprites();
+      if (!room) return;
+      const targets = room.connections.map(id => rooms.get(id)).filter(Boolean);
+      if (targets.length) {
+        const extras = targets.filter(target => target.id !== room.routePrev && target.id !== room.routeNext);
+        const facing = getViewHeading();
+        targets.forEach((destination) => {
+          let heading = facing;
+          let direction = 'link';
+          let distance = 2.75;
+          if (destination.id === room.routeNext) { heading = facing; direction = 'next'; }
+          else if (destination.id === room.routePrev) { heading = facing + Math.PI; direction = 'previous'; }
+          else {
+            const extraIndex = extras.findIndex(item => item.id === destination.id);
+            const slots = [-Math.PI / 3, Math.PI / 3, -Math.PI / 2.2, Math.PI / 2.2];
+            heading = facing + slots[extraIndex % slots.length]; distance = 3.15;
+          }
+          const group = new THREE.Group();
+          group.position.set(-Math.sin(heading) * distance, 0.02, -Math.cos(heading) * distance);
+          group.rotation.y = heading;
+          group.userData.destinationId = destination.id;
+          const arrow = makeStreetViewArrow();
+          arrow.userData.destinationId = destination.id;
+          group.add(arrow);
+          const labelText = direction === 'next' ? `Walk forward · ${destination.name}` : direction === 'previous' ? `Walk back · ${destination.name}` : `Go to · ${destination.name}`;
+          const label = makePortalLabel(labelText);
+          label.position.set(0, 0.72, 0); label.scale.set(1.9, 0.48, 1); group.add(label);
+          scene.add(group);
+          activePortals.push({ group, destinationId: destination.id, arrow, label, direction });
+          portalHitTargets.push(arrow);
+        });
+      }
+      buildHotspots(room);
+    }
+
+    function setRoom(roomId, { resetOrientation = false } = {}) {
+      const room = rooms.get(roomId);
+      if (!room) return;
+      currentRoomId = roomId;
+      panoramaMaterial.map = room.texture;
+      panoramaMaterial.color.set(0xffffff);
+      panoramaMaterial.needsUpdate = true;
+      if (resetOrientation) {
+        yaw = 0;
+        pitch = 0;
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+      }
+      buildPortals(room);
+      updateRoomInfo();
+      renderSceneStrip();
+      renderHotspotList();
+      renderFloorPlanPins();
+      roomSelect.value = roomId;
+    }
+
+    roomSelect.addEventListener('change', () => {
+      setRoom(roomSelect.value);
+      showToast(`Entered ${rooms.get(currentRoomId).name}`);
+    });
+
+    previousButton.addEventListener('click', () => {
+      const destinationId = rooms.get(currentRoomId)?.routePrev;
+      if (destinationId) activateDestination(destinationId);
+    });
+    nextButton.addEventListener('click', () => {
+      const destinationId = rooms.get(currentRoomId)?.routeNext;
+      if (destinationId) activateDestination(destinationId);
+    });
+
+    // ------------------------------------------------------------------------
+    // Mouse / touch drag-look, mouse portal hit testing, and mobile controls
+    // ------------------------------------------------------------------------
+    function updateCameraRotation() {
+      camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      dragStart = { x: event.clientX, y: event.clientY, yaw, pitch };
+      dragMoved = false;
+      renderer.domElement.setPointerCapture?.(event.pointerId);
+    });
+
+    renderer.domElement.addEventListener('pointermove', (event) => {
+      if (!dragStart) return;
+      const dx = event.clientX - dragStart.x;
+      const dy = event.clientY - dragStart.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+      yaw = dragStart.yaw - dx * 0.0045;
+      pitch = THREE.MathUtils.clamp(dragStart.pitch - dy * 0.0045, -Math.PI * 0.48, Math.PI * 0.48);
+      updateCameraRotation();
+    });
+
+    renderer.domElement.addEventListener('pointerup', (event) => {
+      if (!dragStart) return;
+      const wasClick = !dragMoved && Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < 7;
+      dragStart = null;
+      try { renderer.domElement.releasePointerCapture?.(event.pointerId); } catch (_) {}
+      if (wasClick) { if (editMode) handleEditorCanvasClick(event.clientX, event.clientY); else selectPortalFromScreen(event.clientX, event.clientY); }
+    });
+    renderer.domElement.addEventListener('pointercancel', () => { dragStart = null; });
+    renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
+
+    function selectPortalFromScreen(clientX, clientY) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouseNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouseNDC, camera);
+      const hits = raycaster.intersectObjects([...portalHitTargets, ...hotspotHitTargets], false);
+      if (hits.length) activateInteractiveTarget(hits[0].object);
+    }
+
+    resetViewButton.addEventListener('click', () => {
+      yaw = 0;
+      pitch = 0;
+      updateCameraRotation();
+      showToast('View reset');
+    });
+
+    // ------------------------------------------------------------------------
+    // WebXR controller rays. Each controller gets a target-ray laser and a
+    // Raycaster that selects the nearest portal when its select event fires.
+    // ------------------------------------------------------------------------
+    for (let i = 0; i < 2; i++) {
+      const controller = renderer.xr.getController(i);
+      const laserGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -12)
+      ]);
+      const laser = new THREE.Line(laserGeometry, new THREE.LineBasicMaterial({ color: 0x55e6c1, transparent: true, opacity: 0.9, depthTest: false }));
+      laser.renderOrder = 1000;
+      laser.visible = false;
+      controller.add(laser);
+      controller.userData.laser = laser;
+      controller.addEventListener('select', () => {
+        const target = getControllerPortalHit(controller);
+        if (target) activateInteractiveTarget(target);
+      });
+      scene.add(controller);
+      controllers.push(controller);
+    }
+
+    function getControllerPortalHit(controller) {
+      controller.updateMatrixWorld(true);
+      tempMatrix.extractRotation(controller.matrixWorld);
+      tempOrigin.setFromMatrixPosition(controller.matrixWorld);
+      tempDirection.set(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+      raycaster.set(tempOrigin, tempDirection);
+      const hits = raycaster.intersectObjects([...portalHitTargets, ...hotspotHitTargets], false);
+      return hits.length ? hits[0].object : null;
+    }
+
+    function updateControllerHover() {
+      const xrActive = renderer.xr.isPresenting;
+      for (const controller of controllers) {
+        if (controller.userData.laser) controller.userData.laser.visible = xrActive;
+      }
+      if (!xrActive || (portalHitTargets.length === 0 && hotspotHitTargets.length === 0)) {
+        activePortals.forEach(p => { p.arrow.scale.set(1.0, 1.0, 1.0); });
+        return;
+      }
+      const hoveredTargets = new Set();
+      for (const controller of controllers) {
+        const target = getControllerPortalHit(controller);
+        if (target) hoveredTargets.add(target);
+      }
+      activePortals.forEach(p => {
+        const hover = hoveredTargets.has(p.arrow);
+        const scale = hover ? 1.22 : 1.0;
+        p.arrow.scale.set(scale, scale, 1);
+      });
+      activeHotspotSprites.forEach(sprite => {
+        const base = sprite.userData.baseScale || 1;
+        const scale = hoveredTargets.has(sprite) ? 1.18 : 1;
+        sprite.scale.set(base * scale, base * scale * (sprite.userData.aspect || .32), 1);
+      });
+    }
+
+    let isWalking = false;
+    function activateDestination(destinationId) {
+      if (!rooms.has(destinationId) || destinationId === currentRoomId || isWalking) return;
+      isWalking = true;
+      walkTransition.classList.add('active');
+      // Brief visual dip masks the instantaneous pano swap, making transitions
+      // feel more like stepping to the next Street View capture.
+      window.setTimeout(() => {
+        setRoom(destinationId);
+        requestAnimationFrame(() => {
+          walkTransition.classList.remove('active');
+          window.setTimeout(() => { isWalking = false; }, 190);
+        });
+        showToast(`Walking to ${rooms.get(destinationId).name}`);
+      }, 130);
+    }
+
+    // ------------------------------------------------------------------------
+    // Photo ingestion: FileReader -> Data URL -> TextureLoader. This deliberately
+    // avoids remote image URLs, so imported local files do not create CORS issues.
+    // Imported scenes join the graph as a chain connected to the current room.
+    // ------------------------------------------------------------------------
+    function fileToDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function loadTextureFromDataURL(dataURL, label) {
+      return new Promise((resolve, reject) => {
+        const loader = new THREE.TextureLoader();
+        loader.load(dataURL, texture => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.needsUpdate = true;
+          resolve(texture);
+        }, undefined, () => reject(new Error(`Could not decode ${label}. Check that it is a valid image.`)));
+      });
+    }
+
+    function roomNameFromFilename(filename) {
+      const name = filename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return name ? name.replace(/\b\w/g, char => char.toUpperCase()) : 'Imported campus room';
+    }
+
+    async function importFiles(fileList) {
+      if (isImporting) return;
+      const files = [...fileList]
+        .filter(file => /\.(jpe?g|png|webp)$/i.test(file.name) || /^image\/(jpeg|png|webp)$/i.test(file.type))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      if (!files.length) {
+        showToast('Choose JPG, JPEG, PNG, or WebP panorama images.');
+        return;
+      }
+      isImporting = true;
+      uploadButton.disabled = true;
+      uploadButton.textContent = 'Importing…';
+      const linkFromRoom = currentRoomId;
+      const replaceDemoTour = [...rooms.values()].every(room => room.isDemo);
+      const newRooms = [];
+      let failed = 0;
+      showToast(`Importing ${files.length} photo${files.length === 1 ? '' : 's'}…`);
+
+      for (const file of files) {
+        try {
+          const dataURL = await fileToDataURL(file);
+          const texture = await loadTextureFromDataURL(dataURL, file.name);
+          roomSequence += 1;
+          const id = `imported-${Date.now()}-${roomSequence}`;
+          const name = roomNameFromFilename(file.name);
+          const room = addRoom({ id, name, description: `Imported photo · ${file.name}`, texture, sourceData: dataURL, isDemo: false });
+          newRooms.push(room);
+        } catch (error) {
+          console.error(error);
+          failed += 1;
+        }
+      }
+
+      if (newRooms.length) {
+        if (replaceDemoTour) {
+          // On first real import, remove the synthetic examples so the tour starts
+          // at the user's actual campus entrance rather than a demo panorama.
+          clearPortals();
+          for (const room of rooms.values()) { if (room.isDemo) room.texture?.dispose?.(); }
+          rooms.clear();
+          newRooms.forEach(room => rooms.set(room.id, room));
+          currentRoomId = newRooms[0].id;
+          newRooms.forEach(room => { room.connections = []; room.routePrev = null; room.routeNext = null; });
+          for (let i = 0; i < newRooms.length - 1; i++) {
+            connectRooms(newRooms[i].id, newRooms[i + 1].id, { route: true });
+          }
+        } else {
+          let previousId = linkFromRoom;
+          for (const room of newRooms) {
+            connectRooms(previousId, room.id, { route: true });
+            previousId = room.id;
+          }
+        }
+        refreshRoomDropdown();
+        setRoom(newRooms[0].id, { resetOrientation: true });
+        showToast(`Added ${newRooms.length} viewpoint${newRooms.length === 1 ? '' : 's'}${failed ? ` · ${failed} failed` : ''}. Click the floor arrows to walk.`);
+      } else {
+        showToast(`No photos were imported${failed ? ` (${failed} could not be read)` : ''}.`);
+      }
+      isImporting = false;
+      uploadButton.disabled = false;
+      uploadButton.textContent = '＋ Import 360 photos';
+      fileInput.value = '';
+    }
+
+    uploadButton.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', event => importFiles(event.target.files));
+
+    let dragDepth = 0;
+    window.addEventListener('dragenter', event => {
+      event.preventDefault();
+      dragDepth += 1;
+      dropOverlay.classList.add('visible');
+    });
+    window.addEventListener('dragover', event => event.preventDefault());
+    window.addEventListener('dragleave', event => {
+      event.preventDefault();
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) dropOverlay.classList.remove('visible');
+    });
+    window.addEventListener('drop', event => {
+      event.preventDefault();
+      dragDepth = 0;
+      dropOverlay.classList.remove('visible');
+      if (event.dataTransfer?.files?.length) importFiles(event.dataTransfer.files);
+    });
+
+    // ------------------------------------------------------------------------
+    // Diagnostics, XR lifecycle, responsive sizing, and render loop
+    // ------------------------------------------------------------------------
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('visible');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => toast.classList.remove('visible'), 2600);
+    }
+
+    function setDiagnostic(message, state = 'warn') {
+      statusText.textContent = message;
+      statusDot.className = `status-dot${state === 'good' ? ' good' : state === 'bad' ? ' bad' : ''}`;
+    }
+
+    async function checkWebXRSupport() {
+      if (!window.isSecureContext) {
+        setDiagnostic('Use HTTPS or localhost for WebXR', 'warn');
+        modeTag.textContent = '2D MODE';
+        return;
+      }
+      if (!navigator.xr || typeof navigator.xr.isSessionSupported !== 'function') {
+        setDiagnostic('WebXR unavailable here · 2D tour is ready', 'warn');
+        modeTag.textContent = '2D MODE';
+        return;
+      }
+      try {
+        const supported = await navigator.xr.isSessionSupported('immersive-vr');
+        setDiagnostic(supported ? 'WebXR immersive VR is available' : 'Immersive VR not supported in this browser', supported ? 'good' : 'warn');
+        modeTag.textContent = supported ? 'XR READY' : '2D MODE';
+      } catch (error) {
+        console.warn('WebXR support check failed:', error);
+        setDiagnostic('WebXR check failed · 2D tour is ready', 'warn');
+        modeTag.textContent = '2D MODE';
+      }
+    }
+
+    let transientPointerSession = null;
+    const onTransientSelect = (event) => {
+      // Vision Pro Safari can expose look-and-pinch as a transient pointer rather
+      // than a persistent controller. Use the select event's pose when available.
+      if (event.inputSource?.targetRayMode !== 'transient-pointer') return;
+      const frame = event.frame;
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      if (!frame || !referenceSpace) return;
+      const pose = frame.getPose(event.inputSource.targetRaySpace, referenceSpace);
+      if (!pose) return;
+      const rayMatrix = new THREE.Matrix4().fromArray(pose.transform.matrix);
+      tempOrigin.setFromMatrixPosition(rayMatrix);
+      tempMatrix.extractRotation(rayMatrix);
+      tempDirection.set(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+      raycaster.set(tempOrigin, tempDirection);
+      const hits = raycaster.intersectObjects([...portalHitTargets, ...hotspotHitTargets], false);
+      if (hits.length) activateInteractiveTarget(hits[0].object);
+    };
+
+    renderer.xr.addEventListener('sessionstart', () => {
+      // With local-floor, the reference space places the user's feet at the origin.
+      camera.position.set(0, 0, 0);
+      panoramaMesh.position.y = 0;
+      buildPortals(rooms.get(currentRoomId));
+      modeTag.textContent = 'IMMERSIVE';
+      setDiagnostic('Immersive session active · aim and trigger arrows', 'good');
+      transientPointerSession = renderer.xr.getSession();
+      transientPointerSession?.addEventListener('select', onTransientSelect);
+    });
+    renderer.xr.addEventListener('sessionend', () => {
+      transientPointerSession?.removeEventListener('select', onTransientSelect);
+      transientPointerSession = null;
+      camera.position.set(0, 1.6, 0);
+      panoramaMesh.position.y = 1.6;
+      buildPortals(rooms.get(currentRoomId));
+      modeTag.textContent = '2D MODE';
+      checkWebXRSupport();
+    });
+
+    const vrButton = VRButton.createButton(renderer, {
+      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
+    });
+    document.body.appendChild(vrButton);
+
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    }
+    window.addEventListener('resize', onResize, { passive: true });
+
+    let elapsed = 0;
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const delta = Math.min(clock.getDelta(), 0.05);
+      elapsed += delta;
+      if (autoRotate && !dragStart && !renderer.xr.isPresenting && !editMode) {
+        yaw += delta * 0.045;
+        updateCameraRotation();
+      }
+      // A very subtle scale pulse helps users notice the Street View arrows.
+      activePortals.forEach((portal, index) => {
+        const pulse = 1 + Math.sin(elapsed * 2 + index * 1.3) * 0.035;
+        if (!renderer.xr.isPresenting) portal.arrow.scale.set(1.0 * pulse, 1.0 * pulse, 1);
+      });
+      updateControllerHover();
+      renderer.render(scene, camera);
+    });
+
+    // ------------------------------------------------------------------------
+    // Kuula-inspired virtual-tour tools: editable hotspots, scene filmstrip,
+    // floor-plan pins, branding/audio, clean viewer and portable project files.
+    // This is an independent implementation and does not require a third-party account.
+    // ------------------------------------------------------------------------
+    const studioPanel = document.querySelector('#studioPanel');
+    const tourToolbar = document.querySelector('#tourToolbar');
+    const sceneStrip = document.querySelector('#sceneStrip');
+    const editorHint = document.querySelector('#editorHint');
+    const hotspotList = document.querySelector('#hotspotList');
+    const hotspotProperties = document.querySelector('#hotspotProperties');
+    const roomNameInput = document.querySelector('#roomNameInput');
+    const roomDescriptionInput = document.querySelector('#roomDescriptionInput');
+    const tourTitleInput = document.querySelector('#tourTitleInput');
+    const hotspotLabelInput = document.querySelector('#hotspotLabelInput');
+    const hotspotTypeInput = document.querySelector('#hotspotTypeInput');
+    const hotspotTargetInput = document.querySelector('#hotspotTargetInput');
+    const hotspotContentInput = document.querySelector('#hotspotContentInput');
+    const hotspotUrlInput = document.querySelector('#hotspotUrlInput');
+    const hotspotTargetWrap = document.querySelector('#hotspotTargetWrap');    const hotspotContentWrap = document.querySelector('#hotspotContentWrap');
+    const hotspotUrlWrap = document.querySelector('#hotspotUrlWrap');
+    const floorPlanPanel = document.querySelector('#floorPlanPanel');
+    const floorPlanImage = document.querySelector('#floorPlanImage');
+    const floorPlanPins = document.querySelector('#floorPlanPins');
+    const infoDialog = document.querySelector('#infoDialog');
+    const infoTitle = document.querySelector('#infoTitle');
+    const infoContent = document.querySelector('#infoContent');
+    const infoLink = document.querySelector('#infoLink');
+
+    function clearHotspotSprites() {
+      for (const sprite of activeHotspotSprites) {
+        scene.remove(sprite);
+        if (sprite.material?.map) sprite.material.map.dispose();
+        sprite.material?.dispose();
+      }
+      activeHotspotSprites = [];
+      hotspotHitTargets = [];
+    }
+
+    function hotspotTexture(hotspot) {
+      const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 180;
+      const ctx = canvas.getContext('2d');
+      const accent = hotspot.type === 'navigation' ? '#55e6c1' : hotspot.type === 'link' ? '#81aaff' : '#ffd27d';
+      ctx.shadowColor = accent; ctx.shadowBlur = 18;
+      ctx.fillStyle = 'rgba(6,15,27,.88)'; roundRect(ctx, 8, 10, 624, 158, 75); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.strokeStyle = accent; ctx.lineWidth = 5; roundRect(ctx, 8, 10, 624, 158, 75); ctx.stroke();
+      ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(94, 89, 55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#07131e'; ctx.font = '900 66px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(hotspot.type === 'navigation' ? '➜' : hotspot.type === 'link' ? '↗' : 'i', 94, 87);
+      ctx.fillStyle = '#f4f8ff'; ctx.font = '700 37px system-ui,sans-serif'; ctx.textAlign = 'left';
+      let label = hotspot.label || (hotspot.type === 'navigation' ? 'Walk to viewpoint' : hotspot.type === 'link' ? 'Open link' : 'More information');
+      while (ctx.measureText(label).width > 465 && label.length > 8) label = label.slice(0, -4) + '…';
+      ctx.fillText(label, 170, 89);
+      const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; return texture;
+    }
+
+    function buildHotspots(room) {
+      if (!room?.hotspots?.length) return;
+      for (const hotspot of room.hotspots) {
+        if (!Array.isArray(hotspot.position) || hotspot.position.length < 3) continue;
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: hotspotTexture(hotspot), transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: true }));
+        const v = new THREE.Vector3(hotspot.position[0], hotspot.position[1], hotspot.position[2]).normalize().multiplyScalar(22);
+        sprite.position.copy(panoramaMesh.position).add(v);
+        sprite.scale.set(2.35, .66, 1);
+        sprite.renderOrder = 80;
+        sprite.userData.kind = 'hotspot'; sprite.userData.hotspotId = hotspot.id; sprite.userData.baseScale = 2.35; sprite.userData.aspect = .281;
+        scene.add(sprite); activeHotspotSprites.push(sprite); hotspotHitTargets.push(sprite);
+      }
+    }
+
+    function activateInteractiveTarget(target) {
+      if (!target?.userData) return;
+      if (target.userData.kind === 'hotspot') activateHotspot(target.userData.hotspotId);
+      else if (target.userData.destinationId) activateDestination(target.userData.destinationId);
+    }
+
+    function activateHotspot(hotspotId) {
+      const room = rooms.get(currentRoomId);
+      const hotspot = room?.hotspots?.find(item => item.id === hotspotId);
+      if (!hotspot) return;
+      if (hotspot.type === 'navigation') {
+        if (hotspot.targetId && rooms.has(hotspot.targetId)) activateDestination(hotspot.targetId);
+        else showToast('Choose a destination for this navigation hotspot in Edit tour.');
+      } else if (hotspot.type === 'link') {
+        const url = safeHttpUrl(hotspot.url);
+        if (url) window.open(url, '_blank', 'noopener,noreferrer');
+        else showInfoDialog(hotspot.label, 'This hotspot does not have a valid website URL yet. Edit the hotspot to add an HTTPS link.');
+      } else showInfoDialog(hotspot.label || 'Campus information', hotspot.content || 'No information has been added to this hotspot yet.');
+    }
+
+    function safeHttpUrl(value) {
+      try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : null; } catch (_) { return null; }
+    }
+
+    function showInfoDialog(title, content, url = '') {
+      infoTitle.textContent = title || 'Campus information'; infoContent.textContent = content || '';
+      const safe = safeHttpUrl(url);
+      infoLink.style.display = safe ? 'inline-block' : 'none'; if (safe) infoLink.href = safe;
+      infoDialog.hidden = false;
+    }
+    document.querySelector('#closeInfoDialogButton').addEventListener('click', () => infoDialog.hidden = true);
+    infoDialog.addEventListener('click', event => { if (event.target === infoDialog) infoDialog.hidden = true; });
+
+    function renderSceneStrip() {
+      if (!sceneStrip) return;
+      sceneStrip.replaceChildren();
+      for (const room of rooms.values()) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = `scene-card${room.id === currentRoomId ? ' current' : ''}`; button.title = room.name;
+        const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy';
+        try {
+          const source = room.texture?.image;
+          if (source && source.width && source.height) {
+            const canvas = document.createElement('canvas'); canvas.width = 240; canvas.height = 120;
+            const ctx = canvas.getContext('2d'); const ratio = Math.max(240 / source.width, 120 / source.height);
+            const w = source.width * ratio, h = source.height * ratio;
+            ctx.drawImage(source, (240-w)/2, (120-h)/2, w, h); img.src = canvas.toDataURL('image/jpeg', .72);
+          }
+        } catch (_) {}
+        button.appendChild(img); const label = document.createElement('span'); label.textContent = room.name; button.appendChild(label);
+        button.addEventListener('click', () => { setRoom(room.id); showToast(`Entered ${room.name}`); }); sceneStrip.appendChild(button);
+      }
+    }
+
+    function syncStudioRoomFields() {
+      const room = rooms.get(currentRoomId); if (!room) return;
+      roomNameInput.value = room.name || ''; roomDescriptionInput.value = room.description || '';
+      tourTitleInput.value = tourTitle;
+      renderHotspotList();
+    }
+
+    function setEditMode(enabled) {
+      editMode = Boolean(enabled); studioPanel.hidden = !editMode;
+      document.querySelector('#editTourButton').classList.toggle('active', editMode);
+      editorHint.classList.toggle('visible', editMode && Boolean(pendingHotspotType));
+      renderer.domElement.style.cursor = editMode ? 'crosshair' : 'grab';
+      if (editMode) syncStudioRoomFields(); else pendingHotspotType = null;
+    }
+    document.querySelector('#editTourButton').addEventListener('click', () => setEditMode(!editMode));
+    document.querySelector('#closeStudioButton').addEventListener('click', () => setEditMode(false));
+
+    function promptHotspotPlacement(type) {
+      setEditMode(true); pendingHotspotType = type;
+      editorHint.textContent = type === 'navigation' ? 'Click the panorama to place a navigation hotspot' : type === 'info' ? 'Click the panorama to place an information hotspot' : 'Click the panorama to place a website hotspot';
+      editorHint.classList.add('visible');
+      showToast('Now click a position in the 360° view to place the hotspot.');
+    }
+    document.querySelector('#addNavigationHotspotButton').addEventListener('click', () => promptHotspotPlacement('navigation'));
+    document.querySelector('#addInfoHotspotButton').addEventListener('click', () => promptHotspotPlacement('info'));
+    document.querySelector('#addLinkHotspotButton').addEventListener('click', () => promptHotspotPlacement('link'));
+
+    function handleEditorCanvasClick(clientX, clientY) {
+      if (!pendingHotspotType) { showToast('Choose Navigation, Info or Link in the Tour studio first.'); return; }
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1; mouseNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouseNDC, camera);
+      const hits = raycaster.intersectObject(panoramaMesh, false);
+      if (!hits.length) { showToast('Click on the panorama to place the hotspot.'); return; }
+      const direction = hits[0].point.clone().sub(panoramaMesh.position).normalize().multiplyScalar(22);
+      const type = pendingHotspotType; const room = rooms.get(currentRoomId);
+      const target = [...rooms.values()].find(item => item.id !== currentRoomId);
+      const hotspot = { id: `hotspot-${Date.now()}-${Math.random().toString(36).slice(2,7)}`, type,
+        label: type === 'navigation' ? `Walk to ${target?.name || 'another location'}` : type === 'link' ? 'Open website' : 'More information',
+        targetId: type === 'navigation' ? (target?.id || '') : '', content: '', url: '', position: [direction.x, direction.y, direction.z] };
+      room.hotspots = room.hotspots || []; room.hotspots.push(hotspot); selectedHotspotId = hotspot.id; pendingHotspotType = null;
+      editorHint.classList.remove('visible'); buildPortals(room); renderHotspotList(); selectHotspot(hotspot.id); showToast('Hotspot placed. Edit its label and action in the studio.');
+    }
+
+    function renderHotspotList() {
+      const room = rooms.get(currentRoomId); if (!room || !hotspotList) return;
+      hotspotList.replaceChildren();
+      (room.hotspots || []).forEach(hotspot => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = hotspot.id === selectedHotspotId ? 'selected' : '';
+        const icon = hotspot.type === 'navigation' ? '➜' : hotspot.type === 'link' ? '↗' : 'ⓘ';
+        button.textContent = `${icon} ${hotspot.label || 'Untitled hotspot'}`;
+        button.addEventListener('click', () => selectHotspot(hotspot.id)); hotspotList.appendChild(button);
+      });
+      if (!(room.hotspots || []).some(h => h.id === selectedHotspotId)) { selectedHotspotId = null; hotspotProperties.hidden = true; }
+    }
+
+    function selectHotspot(hotspotId) {
+      const room = rooms.get(currentRoomId); const hotspot = room?.hotspots?.find(item => item.id === hotspotId); if (!hotspot) return;
+      selectedHotspotId = hotspotId; hotspotProperties.hidden = false;
+      hotspotLabelInput.value = hotspot.label || ''; hotspotTypeInput.value = hotspot.type || 'info'; hotspotContentInput.value = hotspot.content || ''; hotspotUrlInput.value = hotspot.url || '';
+      hotspotTargetInput.replaceChildren();
+      for (const candidate of rooms.values()) {
+        if (candidate.id === currentRoomId) continue;
+        const option = document.createElement('option'); option.value = candidate.id; option.textContent = candidate.name; hotspotTargetInput.appendChild(option);
+      }
+      if ([...hotspotTargetInput.options].some(option => option.value === hotspot.targetId)) hotspotTargetInput.value = hotspot.targetId;
+      syncHotspotPropertyVisibility(); renderHotspotList();
+    }
+    function syncHotspotPropertyVisibility() {
+      const type = hotspotTypeInput.value;
+      hotspotTargetWrap.hidden = type !== 'navigation'; hotspotContentWrap.hidden = type !== 'info'; hotspotUrlWrap.hidden = type !== 'link';
+    }
+    hotspotTypeInput.addEventListener('change', syncHotspotPropertyVisibility);
+    document.querySelector('#saveHotspotButton').addEventListener('click', () => {
+      const room = rooms.get(currentRoomId); const hotspot = room?.hotspots?.find(item => item.id === selectedHotspotId); if (!hotspot) return;
+      const type = hotspotTypeInput.value;
+      if (type === 'navigation' && !hotspotTargetInput.value) { showToast('Import or add another viewpoint before linking a navigation hotspot.'); return; }
+      if (type === 'link' && hotspotUrlInput.value && !safeHttpUrl(hotspotUrlInput.value)) { showToast('Enter a valid http:// or https:// URL.'); return; }
+      hotspot.label = hotspotLabelInput.value.trim() || (type === 'navigation' ? 'Walk to viewpoint' : type === 'link' ? 'Open website' : 'More information');
+      hotspot.type = type; hotspot.targetId = type === 'navigation' ? hotspotTargetInput.value : '';
+      hotspot.content = hotspotContentInput.value; hotspot.url = hotspotUrlInput.value.trim();
+      buildPortals(room); renderHotspotList(); selectHotspot(hotspot.id); showToast('Hotspot saved.');
+    });
+    document.querySelector('#deleteHotspotButton').addEventListener('click', () => {
+      const room = rooms.get(currentRoomId); if (!room) return;
+      room.hotspots = (room.hotspots || []).filter(item => item.id !== selectedHotspotId); selectedHotspotId = null;
+      hotspotProperties.hidden = true; buildPortals(room); renderHotspotList(); showToast('Hotspot deleted.');
+    });
+
+    document.querySelector('#saveRoomDetailsButton').addEventListener('click', () => {
+      const room = rooms.get(currentRoomId); if (!room) return;
+      room.name = roomNameInput.value.trim() || 'Untitled viewpoint'; room.description = roomDescriptionInput.value.trim() || '360° viewpoint';
+      refreshRoomDropdown(); updateRoomInfo(); renderSceneStrip(); showToast('Location details saved.');
+    });
+    document.querySelector('#saveTourTitleButton').addEventListener('click', () => {
+      tourTitle = tourTitleInput.value.trim() || 'Campus Walkthrough';
+      document.title = `${tourTitle} — 360° Virtual Tour`;
+      const h1 = document.querySelector('#hud h1'); if (h1) h1.textContent = tourTitle.toUpperCase();
+      showToast('Tour branding title saved.');
+    });
+
+    document.querySelector('#autoRotateButton').addEventListener('click', event => {
+      autoRotate = !autoRotate; event.currentTarget.classList.toggle('active', autoRotate);
+      event.currentTarget.textContent = autoRotate ? 'Ⅱ Stop rotate' : '↻ Auto-rotate';
+      showToast(autoRotate ? 'Auto-rotation enabled' : 'Auto-rotation paused');
+    });
+    document.querySelector('#fullscreenButton').addEventListener('click', async () => {
+      try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); else await document.exitFullscreen(); }
+      catch (_) { showToast('Fullscreen is not available in this browser.'); }
+    });
+    document.querySelector('#cleanViewToggleButton').addEventListener('click', () => { cleanView = true; document.body.classList.add('clean-view'); });
+    document.querySelector('#cleanViewButton').addEventListener('click', () => { document.body.classList.remove('clean-view'); cleanView = false; });
+    document.querySelector('#brandingButton').addEventListener('click', () => { setEditMode(true); studioPanel.scrollTo({top:0,behavior:'smooth'}); });
+    document.querySelector('#chooseLogoButton').addEventListener('click', () => document.querySelector('#logoInput').click());
+    document.querySelector('#logoInput').addEventListener('change', async event => {
+      const file = event.target.files?.[0]; if (!file) return;
+      try { logoDataURL = await fileToDataURL(file); const mark = document.querySelector('.brand-mark'); mark.textContent = ''; mark.style.backgroundImage = `url("${logoDataURL}")`; mark.style.backgroundSize = 'contain'; mark.style.backgroundPosition = 'center'; mark.style.backgroundRepeat = 'no-repeat'; mark.style.backgroundColor = 'rgba(255,255,255,.1)'; showToast('Custom logo applied in this viewer.'); }
+      catch (_) { showToast('Could not read the logo image.'); }
+      event.target.value = '';
+    });
+
+    document.querySelector('#audioButton').addEventListener('click', async () => {
+      if (!backgroundAudio) { document.querySelector('#audioInput').click(); return; }
+      try {
+        if (backgroundAudio.paused) { await backgroundAudio.play(); document.querySelector('#audioButton').textContent = '♫ Audio on'; }
+        else { backgroundAudio.pause(); document.querySelector('#audioButton').textContent = '▶ Play audio'; }
+      } catch (_) { showToast('Audio could not be played by this browser.'); }
+    });
+    document.querySelector('#audioInput').addEventListener('change', async event => {
+      const file = event.target.files?.[0]; if (!file) return;
+      if (currentAudioURL) URL.revokeObjectURL(currentAudioURL);
+      currentAudioURL = URL.createObjectURL(file);
+      if (backgroundAudio) { backgroundAudio.pause(); backgroundAudio = null; }
+      backgroundAudio = new Audio(currentAudioURL); backgroundAudio.loop = true; backgroundAudio.volume = .28;
+      try { await backgroundAudio.play(); document.querySelector('#audioButton').textContent = '♫ Audio on'; showToast('Background audio is playing.'); }
+      catch (_) { document.querySelector('#audioButton').textContent = '▶ Play audio'; showToast('Audio loaded. Tap Audio again to retry playback.'); }
+      event.target.value = '';
+    });
+
+    document.querySelector('#floorPlanButton').addEventListener('click', () => {
+      if (!floorPlanData) { document.querySelector('#floorPlanInput').click(); return; }
+      floorPlanPanel.hidden = !floorPlanPanel.hidden;
+      if (!floorPlanPanel.hidden) renderFloorPlanPins();
+    });
+    document.querySelector('#closeFloorPlanButton').addEventListener('click', () => floorPlanPanel.hidden = true);
+    document.querySelector('#uploadFloorPlanButton').addEventListener('click', () => document.querySelector('#floorPlanInput').click());
+    document.querySelector('#floorPlanInput').addEventListener('change', async event => {
+      const file = event.target.files?.[0]; if (!file) return;
+      try { floorPlanData = await fileToDataURL(file); floorPlanImage.src = floorPlanData; floorPlanPanel.hidden = false; renderFloorPlanPins(); showToast('Floor plan added. In Edit tour mode, click it to pin a viewpoint.'); }
+      catch (_) { showToast('Could not read that floor plan.'); }
+      event.target.value = '';
+    });
+    floorPlanImage.addEventListener('click', event => {
+      const rect = floorPlanImage.getBoundingClientRect(); const x = (event.clientX - rect.left) / rect.width; const y = (event.clientY - rect.top) / rect.height;
+      if (editMode) { const room = rooms.get(currentRoomId); if (room) { room.floorPos = [x,y]; renderFloorPlanPins(); showToast(`Pinned ${room.name} on the floor plan.`); } }
+      else {
+        const located = [...rooms.values()].filter(room => Array.isArray(room.floorPos)).sort((a,b) => Math.hypot(a.floorPos[0]-x,a.floorPos[1]-y)-Math.hypot(b.floorPos[0]-x,b.floorPos[1]-y))[0];
+        if (located && Math.hypot(located.floorPos[0]-x,located.floorPos[1]-y) < .15) activateDestination(located.id);
+      }
+    });
+    function renderFloorPlanPins() {
+      if (!floorPlanPins) return; floorPlanPins.replaceChildren();
+      let index = 0;
+      for (const room of rooms.values()) {
+        if (!Array.isArray(room.floorPos)) { index++; continue; }
+        const pin = document.createElement('button'); pin.type = 'button'; pin.className = 'plan-pin'; pin.style.left = `${room.floorPos[0]*100}%`; pin.style.top = `${room.floorPos[1]*100}%`; pin.title = room.name;
+        const span = document.createElement('span'); span.textContent = String(index + 1); pin.appendChild(span);
+        pin.addEventListener('click', event => { event.stopPropagation(); if (editMode) { const roomInput = rooms.get(room.id); if (roomInput) { currentRoomId = room.id; setRoom(room.id); syncStudioRoomFields(); showToast(`Selected pin for ${room.name}; click the map to reposition it.`); } } else activateDestination(room.id); });
+        floorPlanPins.appendChild(pin); index++;
+      }
+      document.querySelector('#floorPlanHint').textContent = editMode ? 'Click the plan to place the current location pin. Click a pin to visit or edit that location.' : 'Select a numbered pin to jump to that viewpoint.';
+    }
+
+    function textureToDataURL(room) {
+      if (room.sourceData?.startsWith('data:')) return room.sourceData;
+      const image = room.texture?.image; if (!image) throw new Error(`No image is available for ${room.name}`);
+      const canvas = document.createElement('canvas'); canvas.width = image.width || 2048; canvas.height = image.height || 1024;
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height); return canvas.toDataURL('image/jpeg', .92);
+    }
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1200);
+    }
+    async function exportTourProject() {
+      try {
+        const project = { format:'campus-360-tour', version:1, title:tourTitle, floorPlanData, logoDataURL,
+          rooms: await Promise.all([...rooms.values()].map(async room => ({ id:room.id,name:room.name,description:room.description,
+            sourceData:textureToDataURL(room), isDemo:false, connections:room.connections, routePrev:room.routePrev, routeNext:room.routeNext,
+            hotspots:room.hotspots || [], floorPos:room.floorPos || null }))), currentRoomId };
+        const blob = new Blob([JSON.stringify(project)], {type:'application/json'});
+        const safeName = (tourTitle || 'campus-tour').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'campus-tour';
+        downloadBlob(blob, `${safeName}-project.json`); showToast('Tour project exported, including panoramic photos and hotspots.');
+      } catch (error) { console.error(error); showToast(`Export failed: ${error.message || 'Could not serialize this tour.'}`); }
+    }
+    document.querySelector('#exportTourButton').addEventListener('click', exportTourProject);
+    document.querySelector('#exportFromStudioButton').addEventListener('click', exportTourProject);
+    document.querySelector('#loadTourButton').addEventListener('click', () => document.querySelector('#projectInput').click());
+    document.querySelector('#loadFromStudioButton').addEventListener('click', () => document.querySelector('#projectInput').click());
+    document.querySelector('#projectInput').addEventListener('change', async event => {
+      const file = event.target.files?.[0]; if (!file) return;
+      try {
+        const project = JSON.parse(await file.text());
+        if (project.format !== 'campus-360-tour' || !Array.isArray(project.rooms) || !project.rooms.length) throw new Error('This is not a supported campus tour project file.');
+        const restored = [];
+        for (const item of project.rooms) {
+          if (!item.sourceData || !String(item.sourceData).startsWith('data:image/')) continue;
+          const texture = await loadTextureFromDataURL(item.sourceData, item.name || 'tour panorama');
+          restored.push({...item, texture});
+        }
+        if (!restored.length) throw new Error('No embedded panorama images were found in this project.');
+        clearPortals(); clearHotspotSprites();
+        for (const room of rooms.values()) room.texture?.dispose?.();
+        rooms.clear();
+        for (const item of restored) addRoom({id:item.id,name:item.name,description:item.description,texture:item.texture,sourceData:item.sourceData,isDemo:false,hotspots:item.hotspots || [],floorPos:item.floorPos || null});
+        for (const item of restored) {
+          const room = rooms.get(item.id); if (!room) continue;
+          for (const id of (item.connections || [])) if (rooms.has(id) && !room.connections.includes(id)) room.connections.push(id);
+          room.routePrev = rooms.has(item.routePrev) ? item.routePrev : null; room.routeNext = rooms.has(item.routeNext) ? item.routeNext : null;
+        }
+        currentRoomId = rooms.has(project.currentRoomId) ? project.currentRoomId : restored[0].id;
+        tourTitle = project.title || 'Campus Walkthrough'; tourTitleInput.value = tourTitle;
+        const h1 = document.querySelector('#hud h1'); h1.textContent = tourTitle.toUpperCase(); document.title = `${tourTitle} — 360° Virtual Tour`;
+        floorPlanData = project.floorPlanData || null; if (floorPlanData) { floorPlanImage.src = floorPlanData; floorPlanPanel.hidden = false; }
+        logoDataURL = project.logoDataURL || null; if (logoDataURL) { const mark = document.querySelector('.brand-mark'); mark.textContent=''; mark.style.backgroundImage=`url("${logoDataURL}")`; mark.style.backgroundSize='contain'; mark.style.backgroundPosition='center'; mark.style.backgroundRepeat='no-repeat'; }
+        refreshRoomDropdown(); setRoom(currentRoomId, {resetOrientation:true}); renderFloorPlanPins(); showToast(`Loaded ${restored.length} viewpoints and project hotspots.`);
+      } catch (error) { console.error(error); showToast(`Could not load project: ${error.message || 'Invalid JSON file.'}`); }
+      event.target.value = '';
+    });
+
+    document.addEventListener('keydown', event => {
+      if (event.target.matches('input,textarea,select')) return;
+      if (event.key.toLowerCase() === 'e') setEditMode(!editMode);
+      if (event.key === 'Escape') { infoDialog.hidden = true; floorPlanPanel.hidden = true; }
+      if (event.key === 'ArrowRight' && rooms.get(currentRoomId)?.routeNext) activateDestination(rooms.get(currentRoomId).routeNext);
+      if (event.key === 'ArrowLeft' && rooms.get(currentRoomId)?.routePrev) activateDestination(rooms.get(currentRoomId).routePrev);
+    });
+
+    // Initial room, diagnostics, and loading screen.
+    refreshRoomDropdown();
+    setRoom(currentRoomId);
+    renderSceneStrip();
+    syncStudioRoomFields();
+    checkWebXRSupport();
+    requestAnimationFrame(() => loading.classList.add('hidden'));
+  </script>
+</body>
+</html>
