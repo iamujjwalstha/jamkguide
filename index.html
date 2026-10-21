@@ -241,6 +241,46 @@
   <div id="walkTransition" aria-hidden="true"></div>
   <div id="loading"><div><div class="loader"></div>Building your campus tour…</div></div>
 
+  <script>
+    // Show an actionable message if the module fails before the tour can dismiss its loader.
+    (() => {
+      const showStartupError = (message) => {
+        const loading = document.querySelector('#loading');
+        if (!loading || loading.classList.contains('hidden')) return;
+        const wrap = document.createElement('div');
+        wrap.style.maxWidth = 'min(520px, calc(100vw - 32px))';
+        wrap.style.padding = '24px';
+        wrap.style.textAlign = 'center';
+        const title = document.createElement('div');
+        title.style.fontWeight = '750';
+        title.style.marginBottom = '10px';
+        title.textContent = 'Campus tour could not start';
+        const detail = document.createElement('div');
+        detail.style.color = '#9cacbf';
+        detail.style.fontSize = '12px';
+        detail.style.overflowWrap = 'anywhere';
+        detail.textContent = message || 'Refresh the page. If the problem continues, check your connection and try again.';
+        wrap.append(title, detail);
+        loading.replaceChildren(wrap);
+        loading.style.transition = 'none';
+        loading.style.opacity = '1';
+        loading.style.pointerEvents = 'auto';
+      };
+      window.addEventListener('error', event => {
+        if (event && event.message) showStartupError(event.message);
+      });
+      window.addEventListener('unhandledrejection', event => {
+        const reason = event && event.reason;
+        showStartupError(reason && reason.message ? reason.message : String(reason || 'An initialization task failed.'));
+      });
+      window.setTimeout(() => {
+        const loading = document.querySelector('#loading');
+        if (loading && !loading.classList.contains('hidden')) {
+          showStartupError('The tour is taking too long to initialize. Refresh the page. If it persists, use a current Chrome or Edge browser and check that jsDelivr is reachable.');
+        }
+      }, 20000);
+    })();
+  </script>
   <script type="module">
     import * as THREE from 'three';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
