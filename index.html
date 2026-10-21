@@ -633,10 +633,12 @@
           const arrow = makeStreetViewArrow();
           arrow.userData.destinationId = destination.id;
           group.add(arrow);
-          // Keep labels in the desktop viewer; immersive mode shows only the floor arrow.
+          // Keep labels in the desktop viewer; immersive mode shows only the floor marker.
+          // Declare label outside the condition because activePortals stores it below.
+          let label = null;
           if (!renderer.xr.isPresenting) {
             const labelText = direction === 'next' ? `Walk forward · ${destination.name}` : direction === 'previous' ? `Walk back · ${destination.name}` : `Go to · ${destination.name}`;
-            const label = makePortalLabel(labelText);
+            label = makePortalLabel(labelText);
             label.position.set(0, 0.72, 0); label.scale.set(1.9, 0.48, 1); group.add(label);
           }
           scene.add(group);
