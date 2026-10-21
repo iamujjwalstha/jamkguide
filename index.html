@@ -271,6 +271,9 @@
     let panoramaMesh;
     let activePortals = [];
     let portalHitTargets = [];
+    let draggedPortal = null;
+    const portalDragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.02);
+    const portalDragPoint = new THREE.Vector3();
     let pointerX = 0;
     let pointerY = 0;
     let yaw = 0;
@@ -388,11 +391,12 @@
       return texture;
     }
 
-    function addRoom({ id, name, description, texture, isDemo = false, sourceData = null, hotspots = [], floorPos = null }) {
+    function addRoom({ id, name, description, texture, isDemo = false, sourceData = null, hotspots = [], floorPos = null, portalLayout = {} }) {
       const room = {
         id, name,
         description: description || (isDemo ? 'Demo panorama' : 'Imported 360° photo'),
         texture, isDemo, sourceData, hotspots: Array.isArray(hotspots) ? hotspots : [], floorPos,
+        portalLayout: portalLayout && typeof portalLayout === 'object' ? portalLayout : {},
         connections: [], routePrev: null, routeNext: null
       };
       rooms.set(id, room);
@@ -617,8 +621,13 @@
             const slots = [-Math.PI / 3, Math.PI / 3, -Math.PI / 2.2, Math.PI / 2.2];
             heading = facing + slots[extraIndex % slots.length]; distance = 3.15;
           }
+          const savedPlacement = room.portalLayout?.[destination.id];
+          const markerX = Number.isFinite(savedPlacement?.x) ? savedPlacement.x : -Math.sin(heading) * distance;
+          const markerZ = Number.isFinite(savedPlacement?.z) ? savedPlacement.z : -Math.cos(heading) * distance;
+          // Aim the marker toward its destination from the viewer's position.
+          heading = Number.isFinite(savedPlacement?.heading) ? savedPlacement.heading : Math.atan2(-markerX, -markerZ);
           const group = new THREE.Group();
-          group.position.set(-Math.sin(heading) * distance, 0.02, -Math.cos(heading) * distance);
+          group.position.set(markerX, 0.02, markerZ);
           group.rotation.y = heading;
           group.userData.destinationId = destination.id;
           const arrow = makeStreetViewArrow();
@@ -681,12 +690,50 @@
 
     renderer.domElement.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
+      if (editMode && !renderer.xr.isPresenting) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouseNDC.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseNDC.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        const markerHits = raycaster.intersectObjects(portalHitTargets, false);
+        if (markerHits.length) {
+          draggedPortal = activePortals.find(portal => portal.arrow === markerHits[0].object) || null;
+          if (draggedPortal) {
+            dragStart = null;
+            dragMoved = false;
+            renderer.domElement.setPointerCapture?.(event.pointerId);
+            editorHint.textContent = 'Drag the floor marker to reposition it; it will point away from your viewpoint.';
+            editorHint.classList.add('visible');
+            return;
+          }
+        }
+      }
       dragStart = { x: event.clientX, y: event.clientY, yaw, pitch };
       dragMoved = false;
       renderer.domElement.setPointerCapture?.(event.pointerId);
     });
 
     renderer.domElement.addEventListener('pointermove', (event) => {
+      if (draggedPortal && editMode && !renderer.xr.isPresenting) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouseNDC.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouseNDC.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouseNDC, camera);
+        if (raycaster.ray.intersectPlane(portalDragPlane, portalDragPoint)) {
+          const x = THREE.MathUtils.clamp(portalDragPoint.x, -8, 8);
+          const z = THREE.MathUtils.clamp(portalDragPoint.z, -8, 8);
+          draggedPortal.group.position.set(x, 0.02, z);
+          const heading = Math.atan2(-x, -z);
+          draggedPortal.group.rotation.y = heading;
+          const room = rooms.get(currentRoomId);
+          if (room) {
+            room.portalLayout = room.portalLayout || {};
+            room.portalLayout[draggedPortal.destinationId] = { x, z, heading };
+          }
+          dragMoved = true;
+        }
+        return;
+      }
       if (!dragStart) return;
       const dx = event.clientX - dragStart.x;
       const dy = event.clientY - dragStart.y;
@@ -697,13 +744,22 @@
     });
 
     renderer.domElement.addEventListener('pointerup', (event) => {
+      if (draggedPortal) {
+        const moved = dragMoved;
+        draggedPortal = null;
+        dragMoved = false;
+        try { renderer.domElement.releasePointerCapture?.(event.pointerId); } catch (_) {}
+        editorHint.classList.remove('visible');
+        if (moved) showToast('Floor marker repositioned and direction corrected. Export the tour project to keep this layout.');
+        return;
+      }
       if (!dragStart) return;
       const wasClick = !dragMoved && Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < 7;
       dragStart = null;
       try { renderer.domElement.releasePointerCapture?.(event.pointerId); } catch (_) {}
       if (wasClick) { if (editMode) handleEditorCanvasClick(event.clientX, event.clientY); else selectPortalFromScreen(event.clientX, event.clientY); }
     });
-    renderer.domElement.addEventListener('pointercancel', () => { dragStart = null; });
+    renderer.domElement.addEventListener('pointercancel', () => { dragStart = null; draggedPortal = null; dragMoved = false; });
     renderer.domElement.addEventListener('contextmenu', event => event.preventDefault());
 
     function selectPortalFromScreen(clientX, clientY) {
@@ -1341,7 +1397,7 @@
         const project = { format:'campus-360-tour', version:1, title:tourTitle, floorPlanData, logoDataURL,
           rooms: await Promise.all([...rooms.values()].map(async room => ({ id:room.id,name:room.name,description:room.description,
             sourceData:textureToDataURL(room), isDemo:false, connections:room.connections, routePrev:room.routePrev, routeNext:room.routeNext,
-            hotspots:room.hotspots || [], floorPos:room.floorPos || null }))), currentRoomId };
+            hotspots:room.hotspots || [], floorPos:room.floorPos || null, portalLayout:room.portalLayout || {} }))), currentRoomId };
         const blob = new Blob([JSON.stringify(project)], {type:'application/json'});
         const safeName = (tourTitle || 'campus-tour').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'campus-tour';
         downloadBlob(blob, `${safeName}-project.json`); showToast('Tour project exported, including panoramic photos and hotspots.');
@@ -1366,7 +1422,7 @@
         clearPortals(); clearHotspotSprites();
         for (const room of rooms.values()) room.texture?.dispose?.();
         rooms.clear();
-        for (const item of restored) addRoom({id:item.id,name:item.name,description:item.description,texture:item.texture,sourceData:item.sourceData,isDemo:false,hotspots:item.hotspots || [],floorPos:item.floorPos || null});
+        for (const item of restored) addRoom({id:item.id,name:item.name,description:item.description,texture:item.texture,sourceData:item.sourceData,isDemo:false,hotspots:item.hotspots || [],floorPos:item.floorPos || null,portalLayout:item.portalLayout || {}});
         for (const item of restored) {
           const room = rooms.get(item.id); if (!room) continue;
           for (const id of (item.connections || [])) if (rooms.has(id) && !room.connections.includes(id)) room.connections.push(id);
