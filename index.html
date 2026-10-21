@@ -66,6 +66,21 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .vr-button, #VRButton { z-index: 20 !important; }
     #VRButton { border-radius: 10px !important; font: 700 12px system-ui, sans-serif !important; }
+
+    /* Immersive mode is intentionally minimal: panorama + in-world navigation only. */
+    body.xr-minimal #hud,
+    body.xr-minimal #tourToolbar,
+    body.xr-minimal #sceneStrip,
+    body.xr-minimal #studioPanel,
+    body.xr-minimal #floorPlanPanel,
+    body.xr-minimal #infoDialog,
+    body.xr-minimal #cleanViewButton,
+    body.xr-minimal #dropOverlay,
+    body.xr-minimal #toast,
+    body.xr-minimal #VRButton,
+    body.xr-minimal #editorHint,
+    body.xr-minimal #loading { display: none !important; }
+    body.xr-minimal { cursor: default; }
     @media (max-width: 520px) {
       #hud { padding: 13px; width: min(330px, calc(100vw - 24px)); top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); }
       .brand-mark { width: 32px; height: 32px; }
@@ -583,9 +598,12 @@
           const arrow = makeStreetViewArrow();
           arrow.userData.destinationId = destination.id;
           group.add(arrow);
-          const labelText = direction === 'next' ? `Walk forward · ${destination.name}` : direction === 'previous' ? `Walk back · ${destination.name}` : `Go to · ${destination.name}`;
-          const label = makePortalLabel(labelText);
-          label.position.set(0, 0.72, 0); label.scale.set(1.9, 0.48, 1); group.add(label);
+          // Keep labels in the desktop viewer; immersive mode shows only the floor arrow.
+          if (!renderer.xr.isPresenting) {
+            const labelText = direction === 'next' ? `Walk forward · ${destination.name}` : direction === 'previous' ? `Walk back · ${destination.name}` : `Go to · ${destination.name}`;
+            const label = makePortalLabel(labelText);
+            label.position.set(0, 0.72, 0); label.scale.set(1.9, 0.48, 1); group.add(label);
+          }
           scene.add(group);
           activePortals.push({ group, destinationId: destination.id, arrow, label, direction });
           portalHitTargets.push(arrow);
@@ -928,6 +946,12 @@
     };
 
     renderer.xr.addEventListener('sessionstart', () => {
+      // Minimal XR UI: hide all 2D/editor chrome while keeping in-world floor arrows.
+      document.body.classList.add('xr-minimal');
+      infoDialog.hidden = true;
+      floorPlanPanel.hidden = true;
+      studioPanel.hidden = true;
+      setEditMode(false);
       // With local-floor, the reference space places the user's feet at the origin.
       camera.position.set(0, 0, 0);
       panoramaMesh.position.y = 0;
@@ -938,6 +962,7 @@
       transientPointerSession?.addEventListener('select', onTransientSelect);
     });
     renderer.xr.addEventListener('sessionend', () => {
+      document.body.classList.remove('xr-minimal');
       transientPointerSession?.removeEventListener('select', onTransientSelect);
       transientPointerSession = null;
       camera.position.set(0, 1.6, 0);
@@ -1037,6 +1062,8 @@
     function buildHotspots(room) {
       if (!room?.hotspots?.length) return;
       for (const hotspot of room.hotspots) {
+        // In XR, show navigation hotspots only; hide info/link markers for a clean walkthrough.
+        if (renderer.xr.isPresenting && hotspot.type !== 'navigation') continue;
         if (!Array.isArray(hotspot.position) || hotspot.position.length < 3) continue;
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: hotspotTexture(hotspot), transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: true }));
         const v = new THREE.Vector3(hotspot.position[0], hotspot.position[1], hotspot.position[2]).normalize().multiplyScalar(22);
