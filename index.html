@@ -1220,7 +1220,10 @@
     function setEditMode(enabled) {
       editMode = Boolean(enabled); studioPanel.hidden = !editMode;
       document.querySelector('#editTourButton').classList.toggle('active', editMode);
-      editorHint.classList.toggle('visible', editMode && Boolean(pendingHotspotType));
+      if (editMode && !pendingHotspotType) {
+        editorHint.textContent = 'Drag a floor marker to move it and correct its direction. Use Tour studio to add other hotspots.';
+      }
+      editorHint.classList.toggle('visible', editMode);
       renderer.domElement.style.cursor = editMode ? 'crosshair' : 'grab';
       if (editMode) syncStudioRoomFields(); else pendingHotspotType = null;
     }
