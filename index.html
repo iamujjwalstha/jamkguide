@@ -519,37 +519,63 @@
     }
 
     function makeStreetViewArrow() {
-      // A horizontal, top-down arrow sits near floor level like a Street View
-      // navigation chevron. Unlike a billboard sprite, it has a real 3D position.
+      // A top-down floor marker: two footprints on a subtle glowing disc.
+      // The marker remains a real clickable 3D object and rotates toward its destination.
       const canvas = document.createElement('canvas');
       canvas.width = 384;
       canvas.height = 384;
       const ctx = canvas.getContext('2d');
-      const glow = ctx.createRadialGradient(192, 192, 36, 192, 192, 175);
-      glow.addColorStop(0, 'rgba(85,230,193,.34)');
-      glow.addColorStop(.65, 'rgba(85,230,193,.16)');
+      const glow = ctx.createRadialGradient(192, 192, 42, 192, 192, 178);
+      glow.addColorStop(0, 'rgba(85,230,193,.32)');
+      glow.addColorStop(.68, 'rgba(85,230,193,.13)');
       glow.addColorStop(1, 'rgba(85,230,193,0)');
       ctx.fillStyle = glow;
       ctx.fillRect(0, 0, 384, 384);
-      ctx.fillStyle = 'rgba(5, 15, 27, .78)';
+
+      // Soft dark disc keeps the footsteps visible over bright or busy panoramas.
+      ctx.fillStyle = 'rgba(5, 15, 27, .82)';
       ctx.beginPath();
-      ctx.ellipse(192, 210, 125, 112, 0, 0, Math.PI * 2);
+      ctx.arc(192, 192, 124, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.94)';
-      ctx.lineWidth = 10;
-      ctx.lineJoin = 'round';
-      ctx.fillStyle = '#55e6c1';
+      ctx.lineWidth = 9;
+      ctx.stroke();
+
+      // Draw a pair of simple, rounded shoe prints pointing forward (top of marker).
+      function drawFootprint(x, y, rotation, scale) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rotation);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = '#55e6c1';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 5;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.ellipse(0, 13, 25, 38, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.ellipse(0, -31, 17, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      drawFootprint(135, 206, -0.16, 1);
+      drawFootprint(249, 154, 0.16, 1);
+      // Small forward chevron reinforces that this marker leads to another viewpoint.
+      ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.moveTo(192, 42);
-      ctx.lineTo(315, 177);
-      ctx.lineTo(250, 177);
-      ctx.lineTo(250, 306);
-      ctx.lineTo(134, 306);
-      ctx.lineTo(134, 177);
-      ctx.lineTo(69, 177);
+      ctx.moveTo(192, 56);
+      ctx.lineTo(218, 82);
+      ctx.lineTo(201, 82);
+      ctx.lineTo(201, 101);
+      ctx.lineTo(183, 101);
+      ctx.lineTo(183, 82);
+      ctx.lineTo(166, 82);
       ctx.closePath();
       ctx.fill();
-      ctx.stroke();
+
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
       const material = new THREE.MeshBasicMaterial({
