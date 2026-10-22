@@ -3,6 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <script>
+    // Remove ChatGPT's referral parameter from the address bar after opening the tour.
+    // This changes the visible URL only; it does not reload the page.
+    (() => {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('utm_source') === 'chatgpt.com') {
+        url.searchParams.delete('utm_source');
+        window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+      }
+    })();
+  </script>
   <meta name="theme-color" content="#080d18" />
   <title>Campus 360° — Street View Walkthrough</title>
   <style>
