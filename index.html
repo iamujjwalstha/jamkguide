@@ -1192,8 +1192,8 @@
       });
       updateControllerHover();
       if (cardboardMode && !renderer.xr.isPresenting) {
-        const width = Math.floor(window.innerWidth * renderer.getPixelRatio());
-        const height = Math.floor(window.innerHeight * renderer.getPixelRatio());
+        const width = window.innerWidth;
+        const height = window.innerHeight;
         const half = Math.floor(width / 2);
         cardboardLeft.aspect = half / Math.max(1, height);
         cardboardRight.aspect = (width - half) / Math.max(1, height);
