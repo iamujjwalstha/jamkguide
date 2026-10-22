@@ -324,7 +324,57 @@
   <script type="module">
     import * as THREE from 'three';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
-    import { DeviceOrientationControls } from 'three/addons/controls/DeviceOrientationControls.js';
+
+    // Three.js removed DeviceOrientationControls in r134. Keep phone-viewer
+    // support local to this page so a missing legacy addon cannot stop the tour.
+    class DeviceOrientationControls {
+      constructor(object) {
+        this.object = object;
+        this.object.rotation.reorder('YXZ');
+        this.enabled = true;
+        this.connected = false;
+        this.deviceOrientation = {};
+        this.screenOrientation = 0;
+        this.alphaOffset = 0;
+        this._zee = new THREE.Vector3(0, 0, 1);
+        this._euler = new THREE.Euler();
+        this._q0 = new THREE.Quaternion();
+        this._q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+        this._onDeviceOrientationChange = event => { this.deviceOrientation = event; };
+        this._onScreenOrientationChange = () => {
+          const angle = window.screen?.orientation?.angle;
+          this.screenOrientation = Number.isFinite(angle) ? angle : (Number(window.orientation) || 0);
+        };
+      }
+      connect() {
+        if (this.connected) return;
+        this._onScreenOrientationChange();
+        window.addEventListener('orientationchange', this._onScreenOrientationChange, false);
+        window.addEventListener('deviceorientation', this._onDeviceOrientationChange, false);
+        this.connected = true;
+        this.enabled = true;
+      }
+      disconnect() {
+        window.removeEventListener('orientationchange', this._onScreenOrientationChange, false);
+        window.removeEventListener('deviceorientation', this._onDeviceOrientationChange, false);
+        this.connected = false;
+        this.enabled = false;
+      }
+      update() {
+        if (!this.enabled) return;
+        const device = this.deviceOrientation;
+        const alpha = Number.isFinite(device.alpha) ? THREE.MathUtils.degToRad(device.alpha) + this.alphaOffset : 0;
+        const beta = Number.isFinite(device.beta) ? THREE.MathUtils.degToRad(device.beta) : 0;
+        const gamma = Number.isFinite(device.gamma) ? THREE.MathUtils.degToRad(device.gamma) : 0;
+        const orient = THREE.MathUtils.degToRad(this.screenOrientation || 0);
+        this._euler.set(beta, alpha, -gamma, 'YXZ');
+        this.object.quaternion.setFromEuler(this._euler);
+        this.object.quaternion.multiply(this._q1);
+        this.object.quaternion.multiply(this._q0.setFromAxisAngle(this._zee, -orient));
+      }
+    }
+
+
 
     // ------------------------------------------------------------------------
     // DOM + application state
