@@ -104,12 +104,22 @@
     #tourToolbar .tool:hover, #tourToolbar .tool.active { border-color:rgba(85,230,193,.8); background:rgba(19,55,59,.9); }
     #tourToolbar .tool.accent { background:#55e6c1; color:#071611; border-color:transparent; }
     #sceneStrip { position:fixed; z-index:12; left:50%; bottom:max(15px,env(safe-area-inset-bottom)); transform:translateX(-50%); display:flex; gap:9px; width:min(860px,calc(100vw - 30px)); overflow-x:auto; padding:10px; border:1px solid rgba(255,255,255,.15); border-radius:16px; background:rgba(8,14,25,.78); backdrop-filter:blur(16px); scrollbar-width:thin; }
-    .scene-card { position:relative; flex:0 0 132px; height:78px; overflow:hidden; border:1px solid rgba(255,255,255,.17); border-radius:10px; padding:0; background:#192638; color:#fff; cursor:pointer; text-align:left; }
-    .scene-card img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.73; }
-    .scene-card::after { content:""; position:absolute; inset:25% 0 0; background:linear-gradient(transparent,rgba(0,0,0,.83)); }
-    .scene-card span { position:absolute; z-index:1; left:8px; right:6px; bottom:6px; font-size:11px; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .scene-item { position:relative; flex:0 0 132px; height:78px; border-radius:10px; touch-action:pan-x; }
+    .scene-item.drag-source { opacity:.42; }
+    .scene-item.drag-over { outline:2px solid var(--accent); outline-offset:2px; }
+    .scene-card { position:relative; display:block; width:100%; height:100%; flex:none; overflow:hidden; border:1px solid rgba(255,255,255,.17); border-radius:10px; padding:0; background:#192638; color:#fff; cursor:pointer; text-align:left; }
+    .scene-card img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.73; pointer-events:none; }
+    .scene-card::after { content:""; position:absolute; inset:25% 0 0; background:linear-gradient(transparent,rgba(0,0,0,.83)); pointer-events:none; }
+    .scene-card span { position:absolute; z-index:1; left:8px; right:6px; bottom:6px; font-size:11px; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }
     .scene-card.current { border:2px solid #55e6c1; box-shadow:0 0 0 1px rgba(85,230,193,.15); }
     .scene-card.current img { opacity:.95; }
+    .scene-controls { position:absolute; z-index:4; inset:4px 4px auto; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+    .scene-control { pointer-events:auto; display:grid; place-items:center; width:24px; height:24px; padding:0; border:1px solid rgba(255,255,255,.24); border-radius:7px; color:#fff; background:rgba(5,12,23,.88); font:700 14px/1 system-ui,sans-serif; cursor:pointer; box-shadow:0 2px 7px rgba(0,0,0,.25); }
+    .scene-control:hover { background:#0f766e; border-color:#99f6e4; }
+    .scene-drag-handle { cursor:grab; touch-action:none; user-select:none; }
+    .scene-drag-handle:active { cursor:grabbing; }
+    .scene-remove { color:#fff; background:rgba(125,25,42,.94); }
+    .scene-remove:hover { background:#be123c; }
     #studioPanel { position:fixed; z-index:18; top:70px; right:14px; bottom:116px; width:min(350px,calc(100vw - 28px)); overflow:auto; padding:17px; border:1px solid rgba(180,204,255,.19); border-radius:17px; background:rgba(10,17,29,.95); backdrop-filter:blur(20px); box-shadow:0 20px 65px rgba(0,0,0,.42); }
     #studioPanel[hidden], #floorPlanPanel[hidden], #infoDialog[hidden] { display:none; }
     .studio-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
@@ -206,7 +216,7 @@
   <input id="audioInput" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a" hidden />
   <aside id="studioPanel" hidden aria-label="Virtual tour editor">
     <div class="studio-head"><h2>Tour studio</h2><button class="action" id="closeStudioButton" type="button" aria-label="Close editor">✕</button></div>
-    <div style="font-size:11px;color:#9cacbf;margin:-4px 0 11px">Add a hotspot, then click the panorama to place it. Changes are kept in this browser session until you export the tour project.</div>
+    <div style="font-size:11px;color:#9cacbf;margin:-4px 0 11px">Drag the ⠿ handle on a bottom thumbnail to reorder it; press × to remove a photo. Add a hotspot, then click the panorama to place it. Export the tour project to save changes.</div>
     <div class="studio-section" style="border-top:0;margin-top:0;padding-top:0">
       <h3>Tour branding</h3>
       <label class="studio-label" for="tourTitleInput">Tour title</label><input class="studio-input" id="tourTitleInput" value="Campus Walkthrough" maxlength="90" />
@@ -1243,23 +1253,201 @@
     document.querySelector('#closeInfoDialogButton').addEventListener('click', () => infoDialog.hidden = true);
     infoDialog.addEventListener('click', event => { if (event.target === infoDialog) infoDialog.hidden = true; });
 
+    // Keep the bottom thumbnail strip in sync with the walking route.
+    function routeEdgeKey(a, b) { return [a, b].sort().join('::'); }
+
+    function rebuildRouteChain() {
+      const oldRouteEdges = new Set();
+      for (const room of rooms.values()) {
+        if (room.routePrev) oldRouteEdges.add(routeEdgeKey(room.id, room.routePrev));
+        if (room.routeNext) oldRouteEdges.add(routeEdgeKey(room.id, room.routeNext));
+      }
+      for (const room of rooms.values()) {
+        room.connections = (room.connections || []).filter(id =>
+          rooms.has(id) && !oldRouteEdges.has(routeEdgeKey(room.id, id))
+        );
+        room.routePrev = null;
+        room.routeNext = null;
+      }
+      const orderedRooms = [...rooms.values()];
+      for (let i = 0; i < orderedRooms.length - 1; i++) {
+        connectRooms(orderedRooms[i].id, orderedRooms[i + 1].id, { route: true });
+      }
+    }
+
+    function reorderRoom(roomId, targetId) {
+      if (!rooms.has(roomId) || !rooms.has(targetId) || roomId === targetId) return;
+      const entries = [...rooms.entries()];
+      const from = entries.findIndex(([id]) => id === roomId);
+      const to = entries.findIndex(([id]) => id === targetId);
+      if (from < 0 || to < 0 || from === to) return;
+      const [moved] = entries.splice(from, 1);
+      // Dropping on a later card places the dragged card after it; on an earlier
+      // card it places the dragged card before it.
+      entries.splice(to, 0, moved);
+      rooms.clear();
+      entries.forEach(([id, room]) => rooms.set(id, room));
+      rebuildRouteChain();
+      refreshRoomDropdown();
+      setRoom(currentRoomId);
+      syncStudioRoomFields();
+      showToast(`Moved "${rooms.get(roomId)?.name || 'Photo'}" in the tour order.`);
+    }
+
+    function removeRoom(roomId) {
+      const room = rooms.get(roomId);
+      if (!room) return;
+      if (rooms.size <= 1) {
+        showToast('A tour must contain at least one photo.');
+        return;
+      }
+      if (!window.confirm(`Remove "${room.name}" from this tour? This removes it from the current tour session. Export the project to save your changes.`)) return;
+
+      const oldOrder = [...rooms.keys()];
+      const oldIndex = oldOrder.indexOf(roomId);
+      const fallbackId = room.routeNext && rooms.has(room.routeNext)
+        ? room.routeNext
+        : room.routePrev && rooms.has(room.routePrev)
+          ? room.routePrev
+          : oldOrder.find(id => id !== roomId);
+
+      rooms.delete(roomId);
+      for (const remaining of rooms.values()) {
+        remaining.connections = (remaining.connections || []).filter(id => id !== roomId);
+        remaining.hotspots = (remaining.hotspots || []).filter(h =>
+          !(h.type === 'navigation' && h.targetId === roomId)
+        );
+        if (remaining.portalLayout) delete remaining.portalLayout[roomId];
+      }
+      rebuildRouteChain();
+      if (currentRoomId === roomId) currentRoomId = rooms.has(fallbackId) ? fallbackId : [...rooms.keys()][Math.min(oldIndex, rooms.size - 1)];
+      refreshRoomDropdown();
+      setRoom(currentRoomId);
+      room.texture?.dispose?.();
+      renderFloorPlanPins();
+      syncStudioRoomFields();
+      showToast(`Removed "${room.name}". Export the tour project to keep this change.`);
+    }
+
+    let sceneDragState = null;
+    let suppressSceneClickUntil = 0;
+
+    document.addEventListener('pointermove', event => {
+      if (!sceneDragState || event.pointerId !== sceneDragState.pointerId) return;
+      const distance = Math.hypot(event.clientX - sceneDragState.startX, event.clientY - sceneDragState.startY);
+      if (!sceneDragState.active && distance > 7) {
+        sceneDragState.active = true;
+        sceneDragState.source.classList.add('drag-source');
+      }
+      if (!sceneDragState.active) return;
+      event.preventDefault();
+      const underPointer = document.elementFromPoint(event.clientX, event.clientY);
+      const targetItem = underPointer?.closest?.('.scene-item');
+      sceneStrip.querySelectorAll('.scene-item').forEach(item => item.classList.remove('drag-over'));
+      sceneDragState.targetId = targetItem?.dataset.roomId || sceneDragState.roomId;
+      if (targetItem && sceneDragState.targetId !== sceneDragState.roomId) targetItem.classList.add('drag-over');
+    }, { passive: false });
+
+    document.addEventListener('pointerup', event => {
+      if (!sceneDragState || event.pointerId !== sceneDragState.pointerId) return;
+      const drag = sceneDragState;
+      sceneDragState = null;
+      drag.source.classList.remove('drag-source');
+      sceneStrip.querySelectorAll('.scene-item').forEach(item => item.classList.remove('drag-over'));
+      try { drag.handle.releasePointerCapture?.(event.pointerId); } catch (_) {}
+      if (drag.active && drag.targetId !== drag.roomId) {
+        suppressSceneClickUntil = Date.now() + 450;
+        reorderRoom(drag.roomId, drag.targetId);
+      }
+    });
+
+    document.addEventListener('pointercancel', event => {
+      if (!sceneDragState || event.pointerId !== sceneDragState.pointerId) return;
+      sceneDragState.source.classList.remove('drag-source');
+      sceneStrip.querySelectorAll('.scene-item').forEach(item => item.classList.remove('drag-over'));
+      sceneDragState = null;
+    });
+
     function renderSceneStrip() {
       if (!sceneStrip) return;
       sceneStrip.replaceChildren();
       for (const room of rooms.values()) {
-        const button = document.createElement('button'); button.type = 'button'; button.className = `scene-card${room.id === currentRoomId ? ' current' : ''}`; button.title = room.name;
-        const img = document.createElement('img'); img.alt = ''; img.loading = 'lazy';
+        const item = document.createElement('div');
+        item.className = 'scene-item';
+        item.dataset.roomId = room.id;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `scene-card${room.id === currentRoomId ? ' current' : ''}`;
+        button.title = room.name;
+        button.setAttribute('aria-label', `Open ${room.name}`);
+
+        const img = document.createElement('img');
+        img.alt = '';
+        img.loading = 'lazy';
         try {
           const source = room.texture?.image;
           if (source && source.width && source.height) {
             const canvas = document.createElement('canvas'); canvas.width = 240; canvas.height = 120;
             const ctx = canvas.getContext('2d'); const ratio = Math.max(240 / source.width, 120 / source.height);
             const w = source.width * ratio, h = source.height * ratio;
-            ctx.drawImage(source, (240-w)/2, (120-h)/2, w, h); img.src = canvas.toDataURL('image/jpeg', .72);
+            ctx.drawImage(source, (240-w)/2, (120-h)/2, w, h);
+            img.src = canvas.toDataURL('image/jpeg', .72);
           }
         } catch (_) {}
-        button.appendChild(img); const label = document.createElement('span'); label.textContent = room.name; button.appendChild(label);
-        button.addEventListener('click', () => { setRoom(room.id); showToast(`Entered ${room.name}`); }); sceneStrip.appendChild(button);
+        button.appendChild(img);
+        const label = document.createElement('span');
+        label.textContent = room.name;
+        button.appendChild(label);
+        button.addEventListener('click', () => {
+          if (Date.now() < suppressSceneClickUntil) return;
+          setRoom(room.id);
+          showToast(`Entered ${room.name}`);
+        });
+
+        const controls = document.createElement('div');
+        controls.className = 'scene-controls';
+
+        const handle = document.createElement('button');
+        handle.type = 'button';
+        handle.className = 'scene-control scene-drag-handle';
+        handle.textContent = '⠿';
+        handle.title = 'Drag to reorder this photo';
+        handle.setAttribute('aria-label', `Drag to reorder ${room.name}`);
+        handle.addEventListener('pointerdown', event => {
+          if (event.pointerType === 'mouse' && event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          sceneDragState = {
+            pointerId: event.pointerId,
+            roomId: room.id,
+            startX: event.clientX,
+            startY: event.clientY,
+            source: item,
+            handle,
+            targetId: room.id,
+            active: false
+          };
+          try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+        });
+        handle.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); });
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'scene-control scene-remove';
+        remove.textContent = '×';
+        remove.title = 'Remove this photo from the tour';
+        remove.setAttribute('aria-label', `Remove ${room.name} from tour`);
+        remove.addEventListener('pointerdown', event => event.stopPropagation());
+        remove.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          removeRoom(room.id);
+        });
+
+        controls.append(handle, remove);
+        item.append(button, controls);
+        sceneStrip.appendChild(item);
       }
     }
 
