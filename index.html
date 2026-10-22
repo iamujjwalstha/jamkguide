@@ -160,8 +160,8 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+        "three": "./vendor/three.module.js",
+        "three/addons/": "./vendor/addons/"
       }
     }
   </script>
@@ -316,7 +316,7 @@
       window.setTimeout(() => {
         const loading = document.querySelector('#loading');
         if (loading && !loading.classList.contains('hidden')) {
-          showStartupError('The tour is taking too long to initialize. Refresh the page. If it persists, use a current Chrome or Edge browser and check that jsDelivr is reachable.');
+          showStartupError('The tour is taking too long to initialize. Refresh once. If it still fails, try another browser and make sure JavaScript and WebGL are enabled.');
         }
       }, 20000);
     })();
