@@ -897,9 +897,30 @@
 
     function selectPortalFromScreen(clientX, clientY) {
       const rect = renderer.domElement.getBoundingClientRect();
-      mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      mouseNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouseNDC, camera);
+      const localX = THREE.MathUtils.clamp(clientX - rect.left, 0, rect.width);
+      const localY = THREE.MathUtils.clamp(clientY - rect.top, 0, rect.height);
+
+      // In phone-Cardboard mode the canvas renders two separate eye views.
+      // Map a tap into the correct half-screen and raycast from that eye camera;
+      // using the desktop camera/full-width coordinates makes floor arrows hard
+      // or impossible to tap in the stereoscopic view.
+      let pickCamera = camera;
+      if (cardboardMode && !renderer.xr.isPresenting) {
+        const leftWidth = Math.floor(rect.width / 2);
+        if (localX < leftWidth) {
+          mouseNDC.x = (localX / Math.max(1, leftWidth)) * 2 - 1;
+          pickCamera = cardboardLeft;
+        } else {
+          mouseNDC.x = ((localX - leftWidth) / Math.max(1, rect.width - leftWidth)) * 2 - 1;
+          pickCamera = cardboardRight;
+        }
+        mouseNDC.y = -(localY / Math.max(1, rect.height)) * 2 + 1;
+      } else {
+        mouseNDC.x = (localX / Math.max(1, rect.width)) * 2 - 1;
+        mouseNDC.y = -(localY / Math.max(1, rect.height)) * 2 + 1;
+      }
+
+      raycaster.setFromCamera(mouseNDC, pickCamera);
       const hits = raycaster.intersectObjects([...portalHitTargets, ...hotspotHitTargets], false);
       if (hits.length) activateInteractiveTarget(hits[0].object);
     }
