@@ -76,6 +76,9 @@
     #loading .loader { width: 30px; height: 30px; border: 3px solid rgba(255,255,255,.14); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 12px; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .vr-button, #VRButton { z-index: 20 !important; }
+    body.cardboard-mode #hud, body.cardboard-mode #tourToolbar, body.cardboard-mode #sceneStrip, body.cardboard-mode #studioPanel, body.cardboard-mode #floorPlanPanel, body.cardboard-mode #editorHint, body.cardboard-mode #VRButton { display:none !important; }
+    body.cardboard-mode #cardboardExit { display:block; }
+    #cardboardExit { display:none; position:fixed; z-index:100; top:max(12px,env(safe-area-inset-top)); right:12px; padding:10px 14px; border:1px solid rgba(255,255,255,.35); border-radius:12px; color:white; background:rgba(8,14,25,.85); font-weight:750; }
     #VRButton { border-radius: 10px !important; font: 700 12px system-ui, sans-serif !important; }
 
     /* Immersive mode is intentionally minimal: panorama + in-world navigation only. */
@@ -165,6 +168,7 @@
 </head>
 <body>
   <main id="app" aria-label="Immersive campus tour"></main>
+  <button id="cardboardExit" type="button">Exit phone VR</button>
   <section id="hud" aria-label="Tour controls">
     <div class="brand-row">
       <div class="brand-mark" aria-hidden="true">360</div>
@@ -206,6 +210,7 @@
     <button class="tool" id="audioButton" type="button">♫ Add audio</button>
     <button class="tool" id="brandingButton" type="button">◈ Branding</button>
     <button class="tool" id="fullscreenButton" type="button">⛶ Fullscreen</button>
+    <button class="tool accent" id="cardboardButton" type="button">◉ Phone VR</button>
     <button class="tool" id="cleanViewToggleButton" type="button">◌ Clean view</button>
     <button class="tool accent" id="exportTourButton" type="button">↓ Export tour</button>
     <button class="tool" id="loadTourButton" type="button">↑ Load tour</button>
@@ -305,6 +310,7 @@
   <script type="module">
     import * as THREE from 'three';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
+    import { DeviceOrientationControls } from 'three/addons/controls/DeviceOrientationControls.js';
 
     // ------------------------------------------------------------------------
     // DOM + application state
@@ -1117,6 +1123,45 @@
       checkWebXRSupport();
     });
 
+    let cardboardMode = false;
+    let orientationControls = null;
+    const cardboardLeft = new THREE.PerspectiveCamera(camera.fov, 1, camera.near, camera.far);
+    const cardboardRight = new THREE.PerspectiveCamera(camera.fov, 1, camera.near, camera.far);
+    const cardboardButton = document.querySelector('#cardboardButton');
+    const cardboardExit = document.querySelector('#cardboardExit');
+    function exitCardboardMode() {
+      cardboardMode = false;
+      document.body.classList.remove('cardboard-mode');
+      if (orientationControls) { orientationControls.disconnect(); orientationControls = null; }
+      renderer.setScissorTest(false);
+      renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      cardboardButton.textContent = '◉ Phone VR';
+      checkWebXRSupport();
+    }
+    cardboardExit.addEventListener('click', exitCardboardMode);
+    cardboardButton.addEventListener('click', async () => {
+      if (renderer.xr.isPresenting) { showToast('Exit headset VR before switching to phone VR.'); return; }
+      try {
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission !== 'granted') { showToast('Motion access is needed to look around by moving your phone.'); return; }
+        }
+        orientationControls = new DeviceOrientationControls(camera);
+        orientationControls.connect();
+        cardboardMode = true;
+        document.body.classList.add('cardboard-mode');
+        cardboardButton.textContent = 'Phone VR active';
+        modeTag.textContent = 'PHONE VR';
+        setDiagnostic('Phone VR active · place phone in a viewer', 'good');
+        renderer.setScissorTest(true);
+        if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {});
+      } catch (error) {
+        console.warn('Phone VR could not start:', error);
+        showToast('Phone VR could not start. Check motion-sensor permission and try again.');
+      }
+    });
+
     const vrButton = VRButton.createButton(renderer, {
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
     });
@@ -1135,7 +1180,8 @@
     renderer.setAnimationLoop(() => {
       const delta = Math.min(clock.getDelta(), 0.05);
       elapsed += delta;
-      if (autoRotate && !dragStart && !renderer.xr.isPresenting && !editMode) {
+      if (cardboardMode && orientationControls) orientationControls.update();
+      if (autoRotate && !dragStart && !renderer.xr.isPresenting && !cardboardMode && !editMode) {
         yaw += delta * 0.045;
         updateCameraRotation();
       }
@@ -1145,7 +1191,24 @@
         if (!renderer.xr.isPresenting) portal.arrow.scale.set(1.0 * pulse, 1.0 * pulse, 1);
       });
       updateControllerHover();
-      renderer.render(scene, camera);
+      if (cardboardMode && !renderer.xr.isPresenting) {
+        const width = Math.floor(window.innerWidth * renderer.getPixelRatio());
+        const height = Math.floor(window.innerHeight * renderer.getPixelRatio());
+        const half = Math.floor(width / 2);
+        cardboardLeft.aspect = half / Math.max(1, height);
+        cardboardRight.aspect = (width - half) / Math.max(1, height);
+        cardboardLeft.updateProjectionMatrix(); cardboardRight.updateProjectionMatrix();
+        cardboardLeft.position.copy(camera.position).add(new THREE.Vector3(-0.032, 0, 0).applyQuaternion(camera.quaternion));
+        cardboardRight.position.copy(camera.position).add(new THREE.Vector3(0.032, 0, 0).applyQuaternion(camera.quaternion));
+        cardboardLeft.quaternion.copy(camera.quaternion); cardboardRight.quaternion.copy(camera.quaternion);
+        renderer.setScissorTest(true);
+        renderer.setViewport(0, 0, half, height); renderer.setScissor(0, 0, half, height); renderer.render(scene, cardboardLeft);
+        renderer.setViewport(half, 0, width - half, height); renderer.setScissor(half, 0, width - half, height); renderer.render(scene, cardboardRight);
+      } else {
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+        renderer.render(scene, camera);
+      }
     });
 
     // ------------------------------------------------------------------------
