@@ -841,7 +841,7 @@
           }
         }
       }
-      dragStart = { x: event.clientX, y: event.clientY, yaw, pitch };
+      dragStart = { x: event.clientX, y: event.clientY, yaw, pitch, pointerType: event.pointerType || 'mouse' };
       dragMoved = false;
       renderer.domElement.setPointerCapture?.(event.pointerId);
     });
@@ -870,7 +870,8 @@
       if (!dragStart) return;
       const dx = event.clientX - dragStart.x;
       const dy = event.clientY - dragStart.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) dragMoved = true;
+      const dragThreshold = dragStart.pointerType === 'touch' ? 12 : 4;
+      if (Math.hypot(dx, dy) > dragThreshold) dragMoved = true;
       yaw = dragStart.yaw - dx * 0.0045;
       pitch = THREE.MathUtils.clamp(dragStart.pitch - dy * 0.0045, -Math.PI * 0.48, Math.PI * 0.48);
       updateCameraRotation();
@@ -887,7 +888,8 @@
         return;
       }
       if (!dragStart) return;
-      const wasClick = !dragMoved && Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < 7;
+      const tapThreshold = dragStart.pointerType === 'touch' ? 18 : 7;
+      const wasClick = !dragMoved && Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < tapThreshold;
       dragStart = null;
       try { renderer.domElement.releasePointerCapture?.(event.pointerId); } catch (_) {}
       if (wasClick) { if (editMode) handleEditorCanvasClick(event.clientX, event.clientY); else selectPortalFromScreen(event.clientX, event.clientY); }
