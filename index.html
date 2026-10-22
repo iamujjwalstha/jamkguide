@@ -292,12 +292,26 @@
         loading.style.opacity = '1';
         loading.style.pointerEvents = 'auto';
       };
+      // Ignore a known third-party wallet-injection error seen in some mobile browsers.
+      // It is unrelated to this tour and should not replace the app's loading screen.
+      const isWalletInjectionError = message =>
+        /window\.ethereum\.selectedAddress/i.test(String(message || ''));
+
       window.addEventListener('error', event => {
+        if (event && isWalletInjectionError(event.message)) {
+          event.preventDefault();
+          return;
+        }
         if (event && event.message) showStartupError(event.message);
       });
       window.addEventListener('unhandledrejection', event => {
         const reason = event && event.reason;
-        showStartupError(reason && reason.message ? reason.message : String(reason || 'An initialization task failed.'));
+        const message = reason && reason.message ? reason.message : String(reason || 'An initialization task failed.');
+        if (isWalletInjectionError(message)) {
+          event.preventDefault();
+          return;
+        }
+        showStartupError(message);
       });
       window.setTimeout(() => {
         const loading = document.querySelector('#loading');
